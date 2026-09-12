@@ -23,35 +23,28 @@ $required = @(
     'public/js/configurator.js',
     'templates/configurator.php',
     'templates/steps/step-address.php',
+    'tests/atlas-transport-acceptance.php',
     'tests/validate-plugin.ps1'
 )
 
 $missing = @()
-
 foreach ($relative in $required) {
     $path = Join-Path $PluginRoot $relative
-
     if (-not (Test-Path -LiteralPath $path)) {
         $missing += $relative
     }
 }
-
 if ($missing.Count -gt 0) {
     throw "Missing required files: $($missing -join ', ')"
 }
 
-$main = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'atlas-solar-configurator.php') `
-    -Raw
-
+$main = Get-Content -LiteralPath (Join-Path $PluginRoot 'atlas-solar-configurator.php') -Raw
 if ($main -notmatch 'Plugin Name:\s*ATLAS Solar Lead Configurator') {
     throw 'Main plugin header is missing.'
 }
-
 if ($main -notmatch 'Version:\s*0\.5\.0') {
     throw 'Plugin version header is not 0.5.0.'
 }
-
 if ($main -notmatch "define\('ASC_VERSION', '0\.5\.0'\)") {
     throw 'ASC_VERSION is not 0.5.0.'
 }
@@ -66,14 +59,10 @@ foreach ($bootstrapToken in @(
     }
 }
 
-$plugin = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'includes/class-plugin.php') `
-    -Raw
-
+$plugin = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-plugin.php') -Raw
 if ($plugin -notmatch "add_shortcode\('atlas_solar_configurator'") {
     throw 'Shortcode registration was not found.'
 }
-
 foreach ($token in @(
     'Atlas_Solar_Configurator_Geocoder',
     'Atlas_Solar_Configurator_Atlas_Boundary',
@@ -85,10 +74,7 @@ foreach ($token in @(
     }
 }
 
-$settings = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'includes/class-settings.php') `
-    -Raw
-
+$settings = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-settings.php') -Raw
 foreach ($token in @(
     'nominatim.openstreetmap.org/search',
     'tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -103,10 +89,7 @@ foreach ($token in @(
     }
 }
 
-$geocoder = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'includes/class-geocoder.php') `
-    -Raw
-
+$geocoder = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-geocoder.php') -Raw
 foreach ($token in @(
     'atlas-solar-configurator/v1',
     '/geocode',
@@ -114,17 +97,24 @@ foreach ($token in @(
     'set_transient',
     'countrycodes',
     'user-agent',
-    'nominatim-compatible'
+    'nominatim-compatible',
+    "CACHE_STRATEGY_VERSION = '4'",
+    'build_structured_address',
+    'lookup_structured_candidates',
+    "'street' => `$street",
+    "'city' => `$city",
+    "'layer' => 'address'",
+    "'fallback_mode = 'structured_exact'"
 )) {
     if (-not $geocoder.Contains($token)) {
         throw "Missing geocoder token: $token"
     }
 }
+if ($geocoder.Contains('build_locality_query')) {
+    throw 'Municipality-centre locality fallback must not be present in geocoder v4.'
+}
 
-$boundary = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-boundary.php') `
-    -Raw
-
+$boundary = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-boundary.php') -Raw
 foreach ($token in @(
     "CONTRACT_VERSION = '1.0'",
     '/assessment-contract',
@@ -146,15 +136,11 @@ foreach ($token in @(
         throw "Missing PLUGIN-004 boundary token: $token"
     }
 }
-
 if ($boundary -match 'wp_remote_(get|post|request)') {
-    throw 'Public assessment boundary must remain transport-disconnected in PLUGIN-005 R0.'
+    throw 'Public assessment boundary must remain transport-disconnected in PLUGIN-005 R1.'
 }
 
-$transport = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-transport.php') `
-    -Raw
-
+$transport = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-transport.php') -Raw
 foreach ($token in @(
     '/property-intelligence/roof/click-preview',
     'ASC_ATLAS_BASE_URL',
@@ -173,19 +159,28 @@ foreach ($token in @(
         throw "Missing PLUGIN-005 transport token: $token"
     }
 }
-
 if ($transport.Contains('register_rest_route')) {
-    throw 'PLUGIN-005 R0 transport must not expose its own public REST route.'
+    throw 'PLUGIN-005 R1 transport must not expose its own public REST route.'
 }
-
 if ($transport -match "\['address'\]|\['sessionId'\]|\['consumption'\]|\['energyProfile'\]|\['contact'\]|\['marketing'\]") {
     throw 'PLUGIN-005 ATLAS request mapping must not forward non-coordinate contract fields.'
 }
 
-$template = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'templates/steps/step-address.php') `
-    -Raw
+$transportAcceptance = Get-Content -LiteralPath (Join-Path $PluginRoot 'tests/atlas-transport-acceptance.php') -Raw
+foreach ($token in @(
+    'pre_http_request',
+    'LATITUDE_LONGITUDE_ONLY',
+    'SERVER_SIDE_BEARER',
+    'WIRE_BODY_COORDINATES_ONLY',
+    'ATLAS_HTTP_EXECUTED=False',
+    'FINAL=PASS_PLUGIN_005_R1_SERVER_SIDE_ADAPTER_ACCEPTANCE'
+)) {
+    if (-not $transportAcceptance.Contains($token)) {
+        throw "Missing transport acceptance token: $token"
+    }
+}
 
+$template = Get-Content -LiteralPath (Join-Path $PluginRoot 'templates/steps/step-address.php') -Raw
 foreach ($token in @(
     'data-asc-map',
     'data-asc-candidate-list',
@@ -197,37 +192,20 @@ foreach ($token in @(
     }
 }
 
-$css = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'public/css/configurator.css') `
-    -Raw
-
-$forbiddenCss = @(
-    '.button',
-    '.container',
-    '.row',
-    '.form'
-)
-
+$css = Get-Content -LiteralPath (Join-Path $PluginRoot 'public/css/configurator.css') -Raw
+$forbiddenCss = @('.button', '.container', '.row', '.form')
 foreach ($selector in $forbiddenCss) {
     if ($css.Contains($selector)) {
         throw "Forbidden generic CSS selector found: $selector"
     }
 }
-
-foreach ($selector in @(
-    '.asc-map',
-    '.asc-map-marker-pin',
-    '.asc-candidate-button'
-)) {
+foreach ($selector in @('.asc-map', '.asc-map-marker-pin', '.asc-candidate-button')) {
     if (-not $css.Contains($selector)) {
-        throw "Missing PLUGIN-003 CSS selector: $selector"
+        throw "Missing CSS selector: $selector"
     }
 }
 
-$js = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'public/js/configurator.js') `
-    -Raw
-
+$js = Get-Content -LiteralPath (Join-Path $PluginRoot 'public/js/configurator.js') -Raw
 foreach ($eventName in @(
     'configurator_view',
     'address_started',
@@ -249,7 +227,6 @@ foreach ($eventName in @(
         throw "Missing event name: $eventName"
     }
 }
-
 foreach ($token in @(
     'window.fetch',
     'mapConfig.geocodeUrl',
@@ -259,10 +236,9 @@ foreach ($token in @(
     'draggable: true'
 )) {
     if (-not $js.Contains($token)) {
-        throw "Missing PLUGIN-003 JavaScript token: $token"
+        throw "Missing JavaScript token: $token"
     }
 }
-
 foreach ($forbiddenFrontendToken in @(
     'ASC_ATLAS_BEARER_TOKEN',
     'Authorization: Bearer',
@@ -273,14 +249,10 @@ foreach ($forbiddenFrontendToken in @(
     }
 }
 
-$readme = Get-Content `
-    -LiteralPath (Join-Path $PluginRoot 'readme.txt') `
-    -Raw
-
+$readme = Get-Content -LiteralPath (Join-Path $PluginRoot 'readme.txt') -Raw
 if ($readme -notmatch 'Stable tag:\s*0\.5\.0') {
     throw 'readme.txt stable tag is not 0.5.0.'
 }
-
 foreach ($token in @(
     'assessment-contract',
     'transmitted=false',
@@ -301,22 +273,14 @@ $secretPatterns = @(
     'password\s*=',
     'api[_-]?key\s*='
 )
-
-$files = Get-ChildItem `
-    -LiteralPath $PluginRoot `
-    -Recurse `
-    -File |
+$files = Get-ChildItem -LiteralPath $PluginRoot -Recurse -File |
     Where-Object {
         $_.FullName -notlike '*\.git\*' `
             -and $_.FullName -notlike '*\build\*' `
             -and $_.FullName -ne $PSCommandPath
     }
-
 foreach ($file in $files) {
-    $content = Get-Content `
-        -LiteralPath $file.FullName `
-        -Raw
-
+    $content = Get-Content -LiteralPath $file.FullName -Raw
     foreach ($pattern in $secretPatterns) {
         if ($content -match $pattern) {
             throw "Potential secret pattern found in $($file.FullName)"
