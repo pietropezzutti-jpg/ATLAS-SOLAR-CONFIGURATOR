@@ -34,6 +34,8 @@ final class Atlas_Solar_Configurator_Admin
     public function render_settings_page(): void
     {
         $summary = $this->settings->get_summary();
+        $map_options = $this->settings->get_map_options();
+
         include ASC_PLUGIN_DIR . 'admin/views/settings-page.php';
     }
 }

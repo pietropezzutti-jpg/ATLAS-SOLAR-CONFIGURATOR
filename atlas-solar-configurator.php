@@ -3,7 +3,7 @@
  * Plugin Name: ATLAS Solar Lead Configurator
  * Plugin URI: https://github.com/pietropezzutti-jpg/ATLAS-SOLAR-CONFIGURATOR
  * Description: Public WordPress multi-step solar lead configurator funnel for ATLAS.
- * Version: 0.2.0
+ * Version: 0.3.0
  * Author: ATLAS
  * Text Domain: atlas-solar-configurator
  * Requires at least: 6.0
@@ -16,15 +16,16 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-define('ASC_VERSION', '0.2.0');
+define('ASC_VERSION', '0.3.0');
 define('ASC_PLUGIN_FILE', __FILE__);
 define('ASC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('ASC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('ASC_MOCK_MODE', true);
 
 require_once ASC_PLUGIN_DIR . 'includes/class-session.php';
-require_once ASC_PLUGIN_DIR . 'includes/class-assets.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-settings.php';
+require_once ASC_PLUGIN_DIR . 'includes/class-geocoder.php';
+require_once ASC_PLUGIN_DIR . 'includes/class-assets.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-shortcode.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-plugin.php';
 
