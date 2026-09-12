@@ -104,7 +104,7 @@ foreach ($token in @(
     "'street' => `$street",
     "'city' => `$city",
     "'layer' => 'address'",
-    "'fallback_mode = 'structured_exact'"
+    'structured_exact'
 )) {
     if (-not $geocoder.Contains($token)) {
         throw "Missing geocoder token: $token"
