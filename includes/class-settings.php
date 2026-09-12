@@ -81,6 +81,24 @@ final class Atlas_Solar_Configurator_Settings
                 'autoEnableAtPropertyZoom' => true,
                 'providers' => [
                     [
+                        'id' => 'lombardia-ortofoto-2024',
+                        'enabled' => true,
+                        'label' => 'Ortofoto Lombardia 2024',
+                        'wmsUrl' => 'https://www.cartografia.servizirl.it/arcgis5/services/Ortofoto/Ortofoto_2024/ImageServer/WMSServer',
+                        'layers' => '0',
+                        'version' => '1.1.1',
+                        'format' => 'image/jpeg',
+                        'transparent' => false,
+                        'attributionLabel' => 'Ortofoto 2024 - Regione Lombardia / MASAF',
+                        'attributionUrl' => 'https://www.geoportale.regione.lombardia.it/',
+                        'bounds' => [
+                            'south' => 44.60,
+                            'west' => 8.48,
+                            'north' => 46.65,
+                            'east' => 11.43,
+                        ],
+                    ],
+                    [
                         'id' => 'emilia-romagna-rer-2023-24',
                         'enabled' => true,
                         'label' => 'Ortofoto Emilia-Romagna 2023-24',
@@ -166,7 +184,7 @@ final class Atlas_Solar_Configurator_Settings
                 : 'Nominatim + ANNCSU fallback; Geoapify key not configured',
             'Map tiles' => 'Enabled client-side',
             'Public aerial imagery' => !empty($options['aerial_enabled'])
-                ? 'Automatic provider registry: recent verified regional imagery when available; national MASE fallback otherwise'
+                ? 'Automatic provider registry: Lombardia 2024 + Emilia-Romagna 2023-24 when in coverage; national MASE fallback otherwise'
                 : 'Disabled',
             'Mock solar result' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',
             'Lead transmission' => 'Disabled',
