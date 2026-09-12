@@ -32,13 +32,21 @@ $option_name = Atlas_Solar_Configurator_Settings::OPTION_KEY;
     <p style="max-width: 820px;">
         <?php
         echo esc_html__(
-            'PLUGIN-004 introduce il contratto pubblico v1 per la futura richiesta di assessment ad ATLAS dopo la conferma della posizione. In questa versione il trasporto verso ATLAS resta disabilitato: il plugin valida e normalizza il payload ma non esegue chiamate ad ATLAS, ONE CLICK, CRM o altri servizi interni.',
+            'PLUGIN-005 mantiene il contratto pubblico v1 e aggiunge la fondazione dell’adapter server-side verso ATLAS. In questa fase il boundary pubblico resta intenzionalmente scollegato: la normale esperienza browser continua a validare il contratto senza trasmetterlo ad ATLAS.',
             'atlas-solar-configurator'
         );
         ?>
     </p>
     <p style="max-width: 820px;">
         <code>POST /wp-json/atlas-solar-configurator/v1/assessment-contract</code>
+    </p>
+    <p style="max-width: 820px;">
+        <?php
+        echo esc_html__(
+            'Le credenziali ATLAS non sono configurate in questa pagina e non vengono mai esposte al frontend. L’adapter legge ASC_ATLAS_BASE_URL e ASC_ATLAS_BEARER_TOKEN esclusivamente dalla configurazione server.',
+            'atlas-solar-configurator'
+        );
+        ?>
     </p>
 
     <hr style="margin: 28px 0;" />

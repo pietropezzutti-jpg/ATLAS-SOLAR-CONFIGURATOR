@@ -18,6 +18,7 @@ final class Atlas_Solar_Configurator_Plugin
     private Atlas_Solar_Configurator_Settings $settings;
     private Atlas_Solar_Configurator_Geocoder $geocoder;
     private Atlas_Solar_Configurator_Atlas_Boundary $atlas_boundary;
+    private Atlas_Solar_Configurator_Atlas_Transport $atlas_transport;
 
     private function __construct()
     {
@@ -28,6 +29,7 @@ final class Atlas_Solar_Configurator_Plugin
         $this->shortcode = new Atlas_Solar_Configurator_Shortcode($this->assets, $session);
         $this->geocoder = new Atlas_Solar_Configurator_Geocoder($this->settings);
         $this->atlas_boundary = new Atlas_Solar_Configurator_Atlas_Boundary();
+        $this->atlas_transport = new Atlas_Solar_Configurator_Atlas_Transport();
     }
 
     public static function instance(): self

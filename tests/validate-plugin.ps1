@@ -16,6 +16,7 @@ $required = @(
     'includes/class-session.php',
     'includes/class-geocoder.php',
     'includes/class-atlas-boundary.php',
+    'includes/class-atlas-transport.php',
     'admin/class-admin.php',
     'admin/views/settings-page.php',
     'public/css/configurator.css',
@@ -47,17 +48,18 @@ if ($main -notmatch 'Plugin Name:\s*ATLAS Solar Lead Configurator') {
     throw 'Main plugin header is missing.'
 }
 
-if ($main -notmatch 'Version:\s*0\.4\.0') {
-    throw 'Plugin version header is not 0.4.0.'
+if ($main -notmatch 'Version:\s*0\.5\.0') {
+    throw 'Plugin version header is not 0.5.0.'
 }
 
-if ($main -notmatch "define\('ASC_VERSION', '0\.4\.0'\)") {
-    throw 'ASC_VERSION is not 0.4.0.'
+if ($main -notmatch "define\('ASC_VERSION', '0\.5\.0'\)") {
+    throw 'ASC_VERSION is not 0.5.0.'
 }
 
 foreach ($bootstrapToken in @(
     'includes/class-geocoder.php',
-    'includes/class-atlas-boundary.php'
+    'includes/class-atlas-boundary.php',
+    'includes/class-atlas-transport.php'
 )) {
     if (-not $main.Contains($bootstrapToken)) {
         throw "Missing bootstrap dependency: $bootstrapToken"
@@ -75,6 +77,7 @@ if ($plugin -notmatch "add_shortcode\('atlas_solar_configurator'") {
 foreach ($token in @(
     'Atlas_Solar_Configurator_Geocoder',
     'Atlas_Solar_Configurator_Atlas_Boundary',
+    'Atlas_Solar_Configurator_Atlas_Transport',
     'rest_api_init'
 )) {
     if (-not $plugin.Contains($token)) {
@@ -91,8 +94,9 @@ foreach ($token in @(
     'tile.openstreetmap.org/{z}/{x}/{y}.png',
     'geocodeUrl',
     'propertyZoom',
-    'Contract v1 ready; transport disabled',
-    'ATLAS-owned; not called by WordPress'
+    'transport adapter foundation available',
+    'public boundary disconnected',
+    'never exposed to frontend'
 )) {
     if (-not $settings.Contains($token)) {
         throw "Missing settings token: $token"
@@ -144,7 +148,38 @@ foreach ($token in @(
 }
 
 if ($boundary -match 'wp_remote_(get|post|request)') {
-    throw 'PLUGIN-004 boundary must not perform ATLAS transport.'
+    throw 'Public assessment boundary must remain transport-disconnected in PLUGIN-005 R0.'
+}
+
+$transport = Get-Content `
+    -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-transport.php') `
+    -Raw
+
+foreach ($token in @(
+    '/property-intelligence/roof/click-preview',
+    'ASC_ATLAS_BASE_URL',
+    'ASC_ATLAS_BEARER_TOKEN',
+    'build_preview_request',
+    'request_preview',
+    "'latitude' => `$latitude",
+    "'longitude' => `$longitude",
+    'wp_remote_post',
+    "'Authorization' => 'Bearer ' . `$token",
+    'asc_atlas_transport_not_configured',
+    'public_result_statuses',
+    'publicBoundaryConnected'
+)) {
+    if (-not $transport.Contains($token)) {
+        throw "Missing PLUGIN-005 transport token: $token"
+    }
+}
+
+if ($transport.Contains('register_rest_route')) {
+    throw 'PLUGIN-005 R0 transport must not expose its own public REST route.'
+}
+
+if ($transport -match "\['address'\]|\['sessionId'\]|\['consumption'\]|\['energyProfile'\]|\['contact'\]|\['marketing'\]") {
+    throw 'PLUGIN-005 ATLAS request mapping must not forward non-coordinate contract fields.'
 }
 
 $template = Get-Content `
@@ -228,21 +263,34 @@ foreach ($token in @(
     }
 }
 
+foreach ($forbiddenFrontendToken in @(
+    'ASC_ATLAS_BEARER_TOKEN',
+    'Authorization: Bearer',
+    'property-intelligence/roof/click-preview'
+)) {
+    if ($js.Contains($forbiddenFrontendToken)) {
+        throw "ATLAS server-side transport leaked into frontend JavaScript: $forbiddenFrontendToken"
+    }
+}
+
 $readme = Get-Content `
     -LiteralPath (Join-Path $PluginRoot 'readme.txt') `
     -Raw
 
-if ($readme -notmatch 'Stable tag:\s*0\.4\.0') {
-    throw 'readme.txt stable tag is not 0.4.0.'
+if ($readme -notmatch 'Stable tag:\s*0\.5\.0') {
+    throw 'readme.txt stable tag is not 0.5.0.'
 }
 
 foreach ($token in @(
     'assessment-contract',
     'transmitted=false',
-    'atlasTransport=disabled'
+    'atlasTransport=disabled',
+    'ASC_ATLAS_BASE_URL',
+    'ASC_ATLAS_BEARER_TOKEN',
+    '/property-intelligence/roof/click-preview'
 )) {
     if (-not $readme.Contains($token)) {
-        throw "Missing PLUGIN-004 readme token: $token"
+        throw "Missing PLUGIN-005 readme token: $token"
     }
 }
 
