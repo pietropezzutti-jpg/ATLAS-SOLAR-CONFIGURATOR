@@ -60,7 +60,7 @@ final class Atlas_Solar_Configurator_Settings
             'enabled' => true,
             'library' => 'leaflet',
             'libraryVersion' => '1.9.4',
-            'geocodeUrl' => rest_url('atlas-solar-configurator/v1/geocode'),
+            'geocodeUrl' => rest_url('atlas-solar-configurator/v1/geocode-smart'),
             'tileUrl' => $options['tile_url'],
             'tileAttributionLabel' => $options['tile_attribution_label'],
             'tileAttributionUrl' => $options['tile_attribution_url'],
@@ -130,6 +130,9 @@ final class Atlas_Solar_Configurator_Settings
     public function get_summary(): array
     {
         $options = $this->get_map_options();
+        $geoapify_configured = defined('ASC_GEOAPIFY_API_KEY')
+            ? '' !== trim((string) constant('ASC_GEOAPIFY_API_KEY'))
+            : '' !== trim((string) getenv('ASC_GEOAPIFY_API_KEY'));
 
         return [
             'Plugin version' => ASC_VERSION,
@@ -138,7 +141,9 @@ final class Atlas_Solar_Configurator_Settings
             'ATLAS transport' => 'Server-side adapter present; public boundary disconnected',
             'ATLAS credentials' => 'Server-side only; never exposed to frontend',
             'ONE CLICK' => 'ATLAS-owned; not called by WordPress public flow',
-            'Geocoder' => 'Enabled through WordPress proxy',
+            'Geocoder' => $geoapify_configured
+                ? 'Geoapify primary; Nominatim + ANNCSU fallback'
+                : 'Nominatim + ANNCSU fallback; Geoapify key not configured',
             'Map tiles' => 'Enabled client-side',
             'National orthophoto' => !empty($options['aerial_enabled'])
                 ? 'Enabled: MASE / Geoportale Nazionale WMS, AGEA 2009-2012'
