@@ -8,13 +8,12 @@
  * - globally rate-limited before upstream access;
  * - sent with an identifying User-Agent.
  *
- * PLUGIN-005 geocoder recovery also performs one policy-compliant relaxed
- * lookup when the exact civic-number query returns no candidates. The relaxed
- * lookup removes a recognized trailing Italian province code and, when safe,
- * the rightmost likely civic-number token. This lets the user land on the
- * street/locality and then confirm or adjust the exact property position on
- * the map instead of failing hard when the public geocoder lacks house-number
- * coverage.
+ * PLUGIN-005 geocoder recovery progressively relaxes an unresolved address:
+ * exact address -> street/locality -> locality only. The locality-only fallback
+ * is used only when a likely civic-number token can be identified safely. It
+ * lets the configurator open the map near the requested municipality so the
+ * user can place and confirm the exact property position instead of failing
+ * hard when the public geocoder lacks house-number or street coverage.
  *
  * @package AtlasSolarConfigurator
  */
@@ -29,7 +28,7 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
     private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
-    private const CACHE_STRATEGY_VERSION = '2';
+    private const CACHE_STRATEGY_VERSION = '3';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
     private const FALLBACK_DELAY_MICROSECONDS = 1100000;
 
@@ -109,6 +108,10 @@ final class Atlas_Solar_Configurator_Geocoder
                     'provider' => 'nominatim-compatible',
                     'cached' => true,
                     'fallbackUsed' => !empty($cached['fallbackUsed']),
+                    'fallbackAttempted' => !empty($cached['fallbackAttempted']),
+                    'fallbackMode' => isset($cached['fallbackMode'])
+                        ? sanitize_key((string) $cached['fallbackMode'])
+                        : 'none',
                     'effectiveQuery' => isset($cached['effectiveQuery'])
                         ? sanitize_text_field((string) $cached['effectiveQuery'])
                         : $query,
@@ -141,13 +144,16 @@ final class Atlas_Solar_Configurator_Geocoder
         $candidates = $exact;
         $effective_query = $query;
         $fallback_used = false;
+        $fallback_attempted = false;
+        $fallback_mode = 'none';
+        $relaxed_query = '';
 
         if (0 === count($candidates)) {
             $relaxed_query = $this->build_relaxed_query($query);
 
             if ('' !== $relaxed_query && 0 !== strcasecmp($relaxed_query, $query)) {
-                usleep(self::FALLBACK_DELAY_MICROSECONDS);
-                set_transient(self::RATE_LIMIT_KEY, (string) microtime(true), 2);
+                $fallback_attempted = true;
+                $this->wait_before_fallback();
 
                 $relaxed = $this->lookup_candidates($endpoint, $relaxed_query);
                 if (is_wp_error($relaxed)) {
@@ -158,6 +164,32 @@ final class Atlas_Solar_Configurator_Geocoder
                     $candidates = $relaxed;
                     $effective_query = $relaxed_query;
                     $fallback_used = true;
+                    $fallback_mode = 'street';
+                }
+            }
+        }
+
+        if (0 === count($candidates)) {
+            $locality_query = $this->build_locality_query($query);
+
+            if (
+                '' !== $locality_query
+                && 0 !== strcasecmp($locality_query, $query)
+                && ('' === $relaxed_query || 0 !== strcasecmp($locality_query, $relaxed_query))
+            ) {
+                $fallback_attempted = true;
+                $this->wait_before_fallback();
+
+                $locality = $this->lookup_candidates($endpoint, $locality_query);
+                if (is_wp_error($locality)) {
+                    return $locality;
+                }
+
+                if (count($locality) > 0) {
+                    $candidates = $locality;
+                    $effective_query = $locality_query;
+                    $fallback_used = true;
+                    $fallback_mode = 'locality';
                 }
             }
         }
@@ -165,6 +197,8 @@ final class Atlas_Solar_Configurator_Geocoder
         $cache_payload = [
             'candidates' => $candidates,
             'fallbackUsed' => $fallback_used,
+            'fallbackAttempted' => $fallback_attempted,
+            'fallbackMode' => $fallback_mode,
             'effectiveQuery' => $effective_query,
         ];
 
@@ -180,6 +214,8 @@ final class Atlas_Solar_Configurator_Geocoder
                 'provider' => 'nominatim-compatible',
                 'cached' => false,
                 'fallbackUsed' => $fallback_used,
+                'fallbackAttempted' => $fallback_attempted,
+                'fallbackMode' => $fallback_mode,
                 'effectiveQuery' => $effective_query,
                 'candidates' => $candidates,
             ]
@@ -292,14 +328,63 @@ final class Atlas_Solar_Configurator_Geocoder
 
     private function build_relaxed_query(string $query): string
     {
-        $normalized = preg_replace('/\s+/u', ' ', trim($query));
-        if (!is_string($normalized) || '' === $normalized) {
+        $tokens = $this->normalized_address_tokens($query);
+        if (count($tokens) < 2) {
+            return trim($query);
+        }
+
+        $this->remove_trailing_province_code($tokens);
+        $civic_index = $this->find_likely_civic_index($tokens);
+
+        if (null !== $civic_index) {
+            array_splice($tokens, $civic_index, 1);
+        }
+
+        return $this->tokens_to_query($tokens);
+    }
+
+    private function build_locality_query(string $query): string
+    {
+        $tokens = $this->normalized_address_tokens($query);
+        if (count($tokens) < 2) {
             return '';
         }
 
+        $this->remove_trailing_province_code($tokens);
+        $civic_index = $this->find_likely_civic_index($tokens);
+
+        if (null === $civic_index || $civic_index >= count($tokens) - 1) {
+            return '';
+        }
+
+        $locality_tokens = array_slice($tokens, $civic_index + 1);
+
+        while (
+            count($locality_tokens) > 1
+            && preg_match('/^\d{5}$/', trim((string) $locality_tokens[0], " \t\n\r\0\x0B,. ;"))
+        ) {
+            array_shift($locality_tokens);
+        }
+
+        return $this->tokens_to_query($locality_tokens);
+    }
+
+    private function normalized_address_tokens(string $query): array
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim($query));
+        if (!is_string($normalized) || '' === $normalized) {
+            return [];
+        }
+
         $tokens = preg_split('/\s+/u', $normalized);
-        if (!is_array($tokens) || count($tokens) < 2) {
-            return $normalized;
+
+        return is_array($tokens) ? array_values($tokens) : [];
+    }
+
+    private function remove_trailing_province_code(array &$tokens): void
+    {
+        if (0 === count($tokens)) {
+            return;
         }
 
         $last_index = count($tokens) - 1;
@@ -308,7 +393,10 @@ final class Atlas_Solar_Configurator_Geocoder
         if (in_array($last_token, self::PROVINCE_CODES, true)) {
             array_pop($tokens);
         }
+    }
 
+    private function find_likely_civic_index(array $tokens): ?int
+    {
         for ($index = count($tokens) - 1; $index >= 0; --$index) {
             $token = trim((string) $tokens[$index], " \t\n\r\0\x0B,.;");
 
@@ -326,14 +414,31 @@ final class Atlas_Solar_Configurator_Geocoder
 
             $words_after = count($tokens) - $index - 1;
             if ($index >= 2 && $words_after >= 1) {
-                array_splice($tokens, $index, 1);
-                break;
+                return $index;
             }
         }
 
-        $relaxed = trim(preg_replace('/\s+/u', ' ', implode(' ', $tokens)) ?? '');
+        return null;
+    }
 
-        return $relaxed;
+    private function tokens_to_query(array $tokens): string
+    {
+        $clean = [];
+
+        foreach ($tokens as $token) {
+            $candidate = trim((string) $token, " \t\n\r\0\x0B,.;");
+            if ('' !== $candidate) {
+                $clean[] = $candidate;
+            }
+        }
+
+        return trim(preg_replace('/\s+/u', ' ', implode(' ', $clean)) ?? '');
+    }
+
+    private function wait_before_fallback(): void
+    {
+        usleep(self::FALLBACK_DELAY_MICROSECONDS);
+        set_transient(self::RATE_LIMIT_KEY, (string) microtime(true), 2);
     }
 
     private function status_from_candidates(array $candidates): string
