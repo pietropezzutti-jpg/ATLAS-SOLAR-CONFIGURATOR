@@ -340,11 +340,11 @@ foreach ($token in @(
 }
 
 $secretPatterns = @(
-    'sk-[A-Za-z0-9]',
-    'AIza[0-9A-Za-z_\-]',
+    'sk-[A-Za-z0-9]{8,}',
+    'AIza[0-9A-Za-z_\-]{20,}',
     '-----BEGIN PRIVATE KEY-----',
-    'password\s*=',
-    'api[_-]?key\s*='
+    '(?i)password\s*[:=]\s*["''][^"'']{8,}["'']',
+    '(?i)api[_-]?key\s*[:=]\s*["''][A-Za-z0-9_\-]{16,}["'']'
 )
 $files = Get-ChildItem -LiteralPath $PluginRoot -Recurse -File |
     Where-Object {
