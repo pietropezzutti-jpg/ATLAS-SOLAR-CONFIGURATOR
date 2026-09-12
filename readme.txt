@@ -8,13 +8,13 @@ Stable tag: 0.5.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Public WordPress solar lead configurator with explicit property-position confirmation, ATLAS public contract and server-side transport adapter foundation.
+Public WordPress solar lead configurator with explicit property-position confirmation, national orthophoto and server-side geocoding/provider integration.
 
 == Description ==
 
 ATLAS Solar Lead Configurator provides a public WordPress funnel for address resolution, property-position confirmation, property qualification, consumption profiling, a clearly labelled mock solar result and demo contact capture.
 
-Version 0.5.0 adds the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R1 acceptance phase, so normal browser use still does not call ATLAS.
+Version 0.5.0 includes the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R1 acceptance phase, so normal browser use still does not call ATLAS.
 
 Shortcode:
 
@@ -36,22 +36,37 @@ The public boundary still returns BOUNDARY_READY with transmitted=false and atla
 
 Public result statuses are PREVIEW_AVAILABLE, MANUAL_FALLBACK, DISAMBIGUATION_REQUIRED, IDENTITY_NOT_RESOLVED, IDENTITY_AMBIGUOUS, RNDT_RECORD_NOT_FOUND and RNDT_RECORD_AMBIGUOUS.
 
-The primary geocoder is accessed through a same-origin WordPress REST proxy and is Nominatim-compatible. If both free-form and structured Nominatim lookup fail for an Italian civic address, the server may perform an exact fallback against ANNCSU-derived open data. The default fallback endpoint is the community-operated mirror at developers.coseerobe.it/api/v1/anncsu-indirizzi-slim; it is not an official Agenzia delle Entrate API. It can be overridden with ASC_ANNCSU_ADDRESS_API_URL or disabled by defining that constant as an empty string.
+Address lookup now uses a server-side Geoapify-first route when ASC_GEOAPIFY_API_KEY is configured. The key remains server-side and is never emitted to frontend configuration or REST responses. Searches are restricted to Italy. If Geoapify is not configured, returns no candidates or is temporarily unavailable, the existing Nominatim-compatible geocoder and strict ANNCSU exact-civic fallback remain active.
+
+The legacy Nominatim-compatible geocoder still performs free-form and structured address lookup. If both fail for an Italian civic address, the server may perform an exact fallback against ANNCSU-derived open data. The default fallback endpoint is the community-operated mirror at developers.coseerobe.it/api/v1/anncsu-indirizzi-slim; it is not an official Agenzia delle Entrate API. It can be overridden with ASC_ANNCSU_ADDRESS_API_URL or disabled by defining that constant as an empty string.
 
 The ANNCSU fallback accepts only records that match municipality, street and civic, include valid coordinates and are not flagged out_of_bounds. It never replaces an unresolved address with a municipality or street centroid. Any candidate must still be confirmed by the user on the map before propertyPosition becomes valid.
 
-The default map uses Leaflet with OpenStreetMap tiles. Primary map/geocoder provider endpoints remain configurable in WordPress admin.
+The default map uses Leaflet with OpenStreetMap tiles and a national MASE / Geoportale Nazionale orthophoto layer. Address provider and imagery are independent: changing geocoder does not change the map or the national aerial imagery.
 
 == Installation ==
 
 1. Upload a WordPress-compatible atlas-solar-configurator-0.5.0.zip from Plugins > Add New > Upload Plugin.
 2. Activate the plugin.
 3. Add [atlas_solar_configurator] to a WordPress page.
-4. Review map/geocoder and ATLAS integration status under ATLAS Configurator.
-5. Optionally set ASC_ANNCSU_ADDRESS_API_URL server-side to override or disable the community ANNCSU open-data mirror.
-6. Configure ATLAS base URL/bearer token only in server-side deployment configuration when preparing a later live-transport gate.
+4. Review map/geocoder and integration status under ATLAS Configurator.
+5. For Geoapify-first address lookup, set ASC_GEOAPIFY_API_KEY only in server-side configuration. Do not put the key in JavaScript or public HTML.
+6. Optionally set ASC_ANNCSU_ADDRESS_API_URL server-side to override or disable the community ANNCSU open-data mirror.
+7. Configure ATLAS base URL/bearer token only in server-side deployment configuration when preparing a later live-transport gate.
 
 == Frequently Asked Questions ==
+
+= Does the public configurator require Google Maps? =
+
+No. The map uses Leaflet, OpenStreetMap and the configured national orthophoto. Geoapify, when enabled, is used only for server-side address lookup.
+
+= Where is the Geoapify key stored? =
+
+It is read from the server-side ASC_GEOAPIFY_API_KEY constant or environment variable. It is not stored in frontend JavaScript, HTML, localStorage or public REST responses.
+
+= What happens if Geoapify is not configured or finds nothing? =
+
+The request falls back to the existing Nominatim-compatible and ANNCSU exact-civic address resolution flow.
 
 = Does 0.5.0 call ATLAS during normal public browser use? =
 
@@ -79,7 +94,7 @@ No. WordPress confirms the property position only. Roof geometry and Property In
 
 = Can I change map/geocoder providers? =
 
-Yes. The primary geocoder endpoint, tile URL and tile attribution are configurable from the ATLAS Configurator admin page. The exact-civic ANNCSU fallback endpoint is server-side only and can be overridden with ASC_ANNCSU_ADDRESS_API_URL.
+Yes. The legacy geocoder endpoint, tile URL and tile attribution are configurable from the ATLAS Configurator admin page. Geoapify and the exact-civic ANNCSU fallback are server-side integrations and do not expose credentials to the browser.
 
 = Is the default ANNCSU fallback endpoint official? =
 
@@ -89,6 +104,10 @@ No. It is a community-operated REST mirror over ANNCSU open data. The adapter is
 
 = 0.5.0 =
 
+* Add optional server-side Geoapify-first Italian address lookup via ASC_GEOAPIFY_API_KEY.
+* Keep the Geoapify key outside frontend JavaScript, HTML and public REST responses.
+* Preserve Nominatim + ANNCSU as automatic fallback when Geoapify is unavailable or has no result.
+* Preserve Leaflet/OpenStreetMap and the national MASE / Geoportale Nazionale orthophoto independently from address search.
 * Add PLUGIN-005 server-side ATLAS transport adapter foundation and R1 acceptance harness.
 * Implement exact RoofClickPreviewRequest mapping: latitude + longitude only.
 * Target POST /property-intelligence/roof/click-preview.
