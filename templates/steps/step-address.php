@@ -68,9 +68,10 @@ if (!defined('ABSPATH')) {
         </div>
 
         <p class="asc-map-attribution">
-            Mappa e dati geografici:
-            <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.
-            Ricerca primaria tramite servizio Nominatim-compatible; per civici non risolti può essere usato un fallback server-side su dati open data ANNCSU tramite mirror community configurabile. La posizione dell'immobile diventa valida solo dopo la conferma sulla mappa.
+            Puoi scegliere tra mappa stradale e ortofoto nazionale dal controllo in alto a destra della mappa.
+            La base stradale usa OpenStreetMap; l'ortofoto nazionale usa il servizio pubblico MASE / Geoportale Nazionale con immagini AGEA 2009-2012.
+            La fotografia aerea è utile per riconoscere il tetto ma non rappresenta necessariamente la situazione attuale.
+            La posizione dell'immobile diventa valida solo dopo la conferma sulla mappa.
         </p>
     </div>
 </div>
