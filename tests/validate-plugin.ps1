@@ -24,6 +24,7 @@ $required = @(
     'templates/configurator.php',
     'templates/steps/step-address.php',
     'tests/atlas-transport-acceptance.php',
+    'tests/geocoder-anncsu-acceptance.php',
     'tests/validate-plugin.ps1'
 )
 
@@ -98,20 +99,34 @@ foreach ($token in @(
     'countrycodes',
     'user-agent',
     'nominatim-compatible',
-    "CACHE_STRATEGY_VERSION = '4'",
+    "CACHE_STRATEGY_VERSION = '5'",
     'build_structured_address',
     'lookup_structured_candidates',
     "'street' => `$street",
     "'city' => `$city",
     "'layer' => 'address'",
-    'structured_exact'
+    'structured_exact',
+    'ASC_ANNCSU_ADDRESS_API_URL',
+    'developers.coseerobe.it/api/v1/anncsu-indirizzi-slim',
+    'anncsu-community-open-data',
+    'lookup_anncsu_exact_candidates',
+    'anncsu_record_is_exact',
+    "'NOME_COMUNE' => 'ilike.*'",
+    "'CIVICO' => 'eq.'",
+    'anncsu_exact',
+    'out_of_bounds'
 )) {
     if (-not $geocoder.Contains($token)) {
         throw "Missing geocoder token: $token"
     }
 }
-if ($geocoder.Contains('build_locality_query')) {
-    throw 'Municipality-centre locality fallback must not be present in geocoder v4.'
+foreach ($forbiddenGeocoderToken in @(
+    'build_locality_query',
+    "fallback_mode = 'locality'"
+)) {
+    if ($geocoder.Contains($forbiddenGeocoderToken)) {
+        throw "Municipality-centre fallback must not be present: $forbiddenGeocoderToken"
+    }
 }
 
 $boundary = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-boundary.php') -Raw
@@ -180,12 +195,30 @@ foreach ($token in @(
     }
 }
 
+$geocoderAcceptance = Get-Content -LiteralPath (Join-Path $PluginRoot 'tests/geocoder-anncsu-acceptance.php') -Raw
+foreach ($token in @(
+    'pre_http_request',
+    'anncsu.example.test',
+    'ANNCSU_EXACT_RESOLVED',
+    'ANNCSU_PROVIDER',
+    'ANNCSU_EXACT_MODE',
+    'ANNCSU_OOB_REJECTED',
+    'LOCALITY_CENTRE_SUBSTITUTION=False',
+    'EXTERNAL_HTTP_EXECUTED=False',
+    'FINAL=PASS_PLUGIN_005_EXACT_ANNCSU_SECONDARY_PROVIDER_ACCEPTANCE'
+)) {
+    if (-not $geocoderAcceptance.Contains($token)) {
+        throw "Missing ANNCSU acceptance token: $token"
+    }
+}
+
 $template = Get-Content -LiteralPath (Join-Path $PluginRoot 'templates/steps/step-address.php') -Raw
 foreach ($token in @(
     'data-asc-map',
     'data-asc-candidate-list',
     'data-asc-confirm-position',
-    'CONFERMA POSIZIONE E CONTINUA'
+    'CONFERMA POSIZIONE E CONTINUA',
+    'ANNCSU'
 )) {
     if (-not $template.Contains($token)) {
         throw "Missing address/map template token: $token"
@@ -242,10 +275,11 @@ foreach ($token in @(
 foreach ($forbiddenFrontendToken in @(
     'ASC_ATLAS_BEARER_TOKEN',
     'Authorization: Bearer',
-    'property-intelligence/roof/click-preview'
+    'property-intelligence/roof/click-preview',
+    'ASC_ANNCSU_ADDRESS_API_URL'
 )) {
     if ($js.Contains($forbiddenFrontendToken)) {
-        throw "ATLAS server-side transport leaked into frontend JavaScript: $forbiddenFrontendToken"
+        throw "Server-side configuration leaked into frontend JavaScript: $forbiddenFrontendToken"
     }
 }
 
@@ -259,7 +293,10 @@ foreach ($token in @(
     'atlasTransport=disabled',
     'ASC_ATLAS_BASE_URL',
     'ASC_ATLAS_BEARER_TOKEN',
-    '/property-intelligence/roof/click-preview'
+    '/property-intelligence/roof/click-preview',
+    'ASC_ANNCSU_ADDRESS_API_URL',
+    'ANNCSU',
+    'community'
 )) {
     if (-not $readme.Contains($token)) {
         throw "Missing PLUGIN-005 readme token: $token"
