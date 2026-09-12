@@ -44,12 +44,12 @@ $transport = new Atlas_Solar_Configurator_Atlas_Transport();
 $normalized = [
     'sessionId' => 'must-not-cross-atlas-boundary',
     'address' => [
-        'raw' => 'Via degli Scudi 6 Costa Volpino BG',
-        'formatted' => 'Via degli Scudi 6, Costa Volpino BG',
+        'raw' => 'Via Esempio 39 Comune Test BS',
+        'formatted' => 'Via Esempio 39, Comune Test BS',
     ],
     'propertyPosition' => [
-        'latitude' => 45.829888,
-        'longitude' => 10.098161,
+        'latitude' => 45.000001,
+        'longitude' => 10.000001,
         'confirmed' => true,
         'source' => 'map_click',
     ],
@@ -69,8 +69,8 @@ $mapped = $transport->build_preview_request($normalized);
 asc_transport_assert(!is_wp_error($mapped), 'MAPPING_NOT_ERROR');
 asc_transport_assert(
     $mapped === [
-        'latitude' => 45.829888,
-        'longitude' => 10.098161,
+        'latitude' => 45.000001,
+        'longitude' => 10.000001,
     ],
     'LATITUDE_LONGITUDE_ONLY'
 );
@@ -141,8 +141,8 @@ $body = json_decode((string) ($captured['args']['body'] ?? ''), true);
 asc_transport_assert(is_array($body), 'JSON_BODY');
 asc_transport_assert(
     $body === [
-        'latitude' => 45.829888,
-        'longitude' => 10.098161,
+        'latitude' => 45.000001,
+        'longitude' => 10.000001,
     ],
     'WIRE_BODY_COORDINATES_ONLY'
 );
