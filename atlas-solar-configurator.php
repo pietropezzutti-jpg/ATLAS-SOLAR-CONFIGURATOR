@@ -25,6 +25,7 @@ define('ASC_MOCK_MODE', true);
 require_once ASC_PLUGIN_DIR . 'includes/class-session.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-settings.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-geocoder.php';
+require_once ASC_PLUGIN_DIR . 'includes/class-geoapify-geocoder.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-atlas-boundary.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-atlas-transport.php';
 require_once ASC_PLUGIN_DIR . 'includes/class-assets.php';
