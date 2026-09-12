@@ -1,0 +1,15 @@
+.env
+.env.*
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+node_modules/
+vendor/
+coverage/
+build/*.zip
+secrets.*
+*.secret
