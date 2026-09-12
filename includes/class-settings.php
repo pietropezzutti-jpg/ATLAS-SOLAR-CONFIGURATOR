@@ -1,6 +1,6 @@
 <?php
 /**
- * Foundation settings model.
+ * Settings summary model.
  *
  * @package AtlasSolarConfigurator
  */
@@ -15,8 +15,9 @@ final class Atlas_Solar_Configurator_Settings
     {
         return [
             'Plugin version' => ASC_VERSION,
-            'Mode' => 'Foundation',
+            'Mode' => 'Multi-step demo',
             'ATLAS integration' => 'Disabled',
+            'External providers' => 'Disabled',
             'Mock mode' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',
         ];
     }
