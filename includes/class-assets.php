@@ -47,9 +47,23 @@ final class Atlas_Solar_Configurator_Assets
         );
 
         wp_register_script(
+            'asc-national-orthophoto',
+            ASC_PLUGIN_URL . 'public/js/national-orthophoto.js',
+            ['asc-leaflet'],
+            ASC_VERSION,
+            true
+        );
+
+        wp_localize_script(
+            'asc-national-orthophoto',
+            'ASC_IMAGERY_CONFIG',
+            $this->settings->get_frontend_map_config()['aerial']
+        );
+
+        wp_register_script(
             'atlas-solar-configurator',
             ASC_PLUGIN_URL . 'public/js/configurator.js',
-            ['asc-leaflet'],
+            ['asc-leaflet', 'asc-national-orthophoto'],
             ASC_VERSION,
             true
         );
