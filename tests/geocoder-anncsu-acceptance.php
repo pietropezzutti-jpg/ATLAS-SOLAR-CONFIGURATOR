@@ -6,6 +6,8 @@
  *   wp eval-file wp-content/plugins/atlas-solar-configurator/tests/geocoder-anncsu-acceptance.php
  *
  * All HTTP is intercepted; this test never calls Nominatim or ANNCSU live.
+ * Test data is deliberately synthetic and must not encode a real municipality,
+ * street or property.
  *
  * @package AtlasSolarConfigurator
  */
@@ -53,29 +55,29 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls) {
         parse_str($query, $params);
         $civic = isset($params['CIVICO']) ? (string) $params['CIVICO'] : '';
 
-        if ('eq.6' === $civic) {
+        if ('eq.39' === $civic) {
             $payload = [
                 [
-                    'PROGRESSIVO_ACCESSO' => 'mock-scudi-6',
-                    'NOME_COMUNE' => 'Costa Volpino',
-                    'ODONIMO' => 'VIA DEGLI SCUDI',
-                    'CIVICO' => '6',
+                    'PROGRESSIVO_ACCESSO' => 'mock-example-39',
+                    'NOME_COMUNE' => 'Comune Test',
+                    'ODONIMO' => 'VIA ESEMPIO',
+                    'CIVICO' => '39',
                     'ESPONENTE' => null,
-                    'latitude' => 45.840001,
-                    'longitude' => 10.100001,
+                    'latitude' => 45.000001,
+                    'longitude' => 10.000001,
                     'out_of_bounds' => false,
                 ],
             ];
         } else {
             $payload = [
                 [
-                    'PROGRESSIVO_ACCESSO' => 'mock-scudi-7-oob',
-                    'NOME_COMUNE' => 'Costa Volpino',
-                    'ODONIMO' => 'VIA DEGLI SCUDI',
-                    'CIVICO' => '7',
+                    'PROGRESSIVO_ACCESSO' => 'mock-example-40-oob',
+                    'NOME_COMUNE' => 'Comune Test',
+                    'ODONIMO' => 'VIA ESEMPIO',
+                    'CIVICO' => '40',
                     'ESPONENTE' => null,
-                    'latitude' => 45.840002,
-                    'longitude' => 10.100002,
+                    'latitude' => 45.000002,
+                    'longitude' => 10.000002,
                     'out_of_bounds' => true,
                 ],
             ];
@@ -110,7 +112,7 @@ $run = static function (string $query) use ($geocoder, $nominatim_endpoint) {
     return $geocoder->geocode($request);
 };
 
-$response = $run('via degli scudi 6 Costa volpino bg');
+$response = $run('via esempio 39 Comune Test bs');
 asc_geo_assert($response instanceof WP_REST_Response, 'GEOCODER_RESPONSE');
 $data = $response->get_data();
 
@@ -122,16 +124,16 @@ asc_geo_assert(1 === count($data['candidates'] ?? []), 'ANNCSU_ONE_EXACT_CANDIDA
 
 $candidate = $data['candidates'][0] ?? [];
 asc_geo_assert(
-    false !== stripos((string) ($candidate['displayName'] ?? ''), 'VIA DEGLI SCUDI 6'),
+    false !== stripos((string) ($candidate['displayName'] ?? ''), 'VIA ESEMPIO 39'),
     'ANNCSU_DISPLAY_EXACT_CIVIC'
 );
 asc_geo_assert(
-    45.840001 === ($candidate['latitude'] ?? null)
-        && 10.100001 === ($candidate['longitude'] ?? null),
+    45.000001 === ($candidate['latitude'] ?? null)
+        && 10.000001 === ($candidate['longitude'] ?? null),
     'ANNCSU_EXACT_COORDINATES'
 );
 
-$response_oob = $run('via degli scudi 7 Costa volpino bg');
+$response_oob = $run('via esempio 40 Comune Test bs');
 asc_geo_assert($response_oob instanceof WP_REST_Response, 'OOB_RESPONSE');
 $data_oob = $response_oob->get_data();
 asc_geo_assert('not_found' === ($data_oob['status'] ?? null), 'ANNCSU_OOB_REJECTED');
@@ -145,13 +147,14 @@ $anncsu_calls = array_values(
 );
 asc_geo_assert(count($anncsu_calls) >= 2, 'ANNCSU_SERVER_SIDE_CALLED');
 asc_geo_assert(
-    false !== strpos((string) $anncsu_calls[0], 'CIVICO=eq.6')
-        || false !== strpos(urldecode((string) $anncsu_calls[0]), 'CIVICO=eq.6'),
+    false !== strpos((string) $anncsu_calls[0], 'CIVICO=eq.39')
+        || false !== strpos(urldecode((string) $anncsu_calls[0]), 'CIVICO=eq.39'),
     'ANNCSU_EXACT_CIVIC_FILTER'
 );
 
 remove_filter('pre_http_request', $filter, 10);
 
+fwrite(STDOUT, "REAL_LOCATION_FIXTURE=False\n");
 fwrite(STDOUT, "LOCALITY_CENTRE_SUBSTITUTION=False\n");
 fwrite(STDOUT, "EXTERNAL_HTTP_EXECUTED=False\n");
 fwrite(STDOUT, "FINAL=PASS_PLUGIN_005_EXACT_ANNCSU_SECONDARY_PROVIDER_ACCEPTANCE\n");
