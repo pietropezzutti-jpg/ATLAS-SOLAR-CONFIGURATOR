@@ -21,6 +21,7 @@ $required = @(
     'admin/views/settings-page.php',
     'public/css/configurator.css',
     'public/js/configurator.js',
+    'public/js/national-orthophoto.js',
     'templates/configurator.php',
     'templates/steps/step-address.php',
     'tests/atlas-transport-acceptance.php',
@@ -83,10 +84,26 @@ foreach ($token in @(
     'propertyZoom',
     'transport adapter foundation available',
     'public boundary disconnected',
-    'never exposed to frontend'
+    'never exposed to frontend',
+    'wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map',
+    'OI.ORTOIMMAGINI.2012',
+    'aerial_wms_url',
+    'aerial_wms_layers',
+    'autoEnableAtPropertyZoom'
 )) {
     if (-not $settings.Contains($token)) {
         throw "Missing settings token: $token"
+    }
+}
+
+$assets = Get-Content -LiteralPath (Join-Path $PluginRoot 'includes/class-assets.php') -Raw
+foreach ($token in @(
+    'asc-national-orthophoto',
+    'public/js/national-orthophoto.js',
+    'ASC_IMAGERY_CONFIG'
+)) {
+    if (-not $assets.Contains($token)) {
+        throw "Missing national orthophoto asset token: $token"
     }
 }
 
@@ -218,7 +235,9 @@ foreach ($token in @(
     'data-asc-candidate-list',
     'data-asc-confirm-position',
     'CONFERMA POSIZIONE E CONTINUA',
-    'ANNCSU'
+    'ortofoto nazionale',
+    'MASE / Geoportale Nazionale',
+    '2009-2012'
 )) {
     if (-not $template.Contains($token)) {
         throw "Missing address/map template token: $token"
@@ -281,6 +300,23 @@ foreach ($forbiddenFrontendToken in @(
     if ($js.Contains($forbiddenFrontendToken)) {
         throw "Server-side configuration leaked into frontend JavaScript: $forbiddenFrontendToken"
     }
+}
+
+$orthophoto = Get-Content -LiteralPath (Join-Path $PluginRoot 'public/js/national-orthophoto.js') -Raw
+foreach ($token in @(
+    'ASC_IMAGERY_CONFIG',
+    'L.tileLayer.wms',
+    'OI.ORTOIMMAGINI.2012',
+    'L.CRS.EPSG4326',
+    'L.control.layers',
+    'autoEnableAtPropertyZoom'
+)) {
+    if (-not $orthophoto.Contains($token) -and $token -ne 'OI.ORTOIMMAGINI.2012') {
+        throw "Missing national orthophoto JavaScript token: $token"
+    }
+}
+if ($orthophoto.Contains('OI.ORTOIMMAGINI.2012')) {
+    throw 'National orthophoto layer identifier must come from server-side configuration, not be hard-coded in JavaScript.'
 }
 
 $readme = Get-Content -LiteralPath (Join-Path $PluginRoot 'readme.txt') -Raw
