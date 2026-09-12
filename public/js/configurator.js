@@ -494,13 +494,37 @@
         const lat = latitude(candidate.latitude);
         const lon = longitude(candidate.longitude);
         if (lat === null || lon === null) { return null; }
+
+        const snap = candidate.buildingSnap && typeof candidate.buildingSnap === 'object'
+            ? candidate.buildingSnap
+            : {};
+
         return {
             id: candidate.id !== undefined ? String(candidate.id) : '',
+            placeId: candidate.placeId !== undefined ? String(candidate.placeId) : '',
             displayName: String(candidate.displayName || '').trim(),
             latitude: lat,
             longitude: lon,
+            originalLatitude: finite(candidate.originalLatitude) ? Number(candidate.originalLatitude) : lat,
+            originalLongitude: finite(candidate.originalLongitude) ? Number(candidate.originalLongitude) : lon,
             type: String(candidate.type || ''),
-            category: String(candidate.category || '')
+            category: String(candidate.category || ''),
+            confidence: finite(candidate.confidence) ? Number(candidate.confidence) : null,
+            confidenceBuildingLevel: finite(candidate.confidenceBuildingLevel)
+                ? Number(candidate.confidenceBuildingLevel)
+                : null,
+            matchType: String(candidate.matchType || ''),
+            buildingSnap: {
+                eligible: Boolean(snap.eligible),
+                attempted: Boolean(snap.attempted),
+                applied: Boolean(snap.applied),
+                distanceMeters: finite(snap.distanceMeters) ? Number(snap.distanceMeters) : null,
+                buildingFeatureCount: Number.isInteger(Number(snap.buildingFeatureCount))
+                    ? Number(snap.buildingFeatureCount)
+                    : null,
+                source: snap.source ? String(snap.source) : null,
+                reason: snap.reason ? String(snap.reason) : null
+            }
         };
     }
 
@@ -508,6 +532,9 @@
         const candidates = state.location.candidates || [];
         const candidate = candidates[index];
         if (!candidate) { return; }
+        const snapApplied = Boolean(candidate.buildingSnap && candidate.buildingSnap.applied);
+        const source = snapApplied ? 'geoapify_building_snap' : 'geocoder_candidate';
+
         setState({
             address: {
                 raw: state.address.raw,
@@ -526,13 +553,20 @@
                     latitude: candidate.latitude,
                     longitude: candidate.longitude,
                     confirmed: false,
-                    source: 'geocoder_candidate'
+                    source
                 }
             },
             roofAssessment: null
         });
         if (userInitiated) {
             trackEvent('address_candidate_selected', { candidateIndex: index, candidateCount: candidates.length });
+        }
+        if (snapApplied) {
+            trackEvent('property_position_snapped', {
+                source,
+                distanceMeters: candidate.buildingSnap.distanceMeters,
+                reason: candidate.buildingSnap.reason || null
+            });
         }
         renderLocation();
     }
