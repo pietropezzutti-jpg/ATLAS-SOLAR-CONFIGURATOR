@@ -237,6 +237,36 @@ final class Atlas_Solar_Configurator_Geocoder
         );
     }
 
+    /**
+     * Return only ANNCSU exact-civic candidates for an address-like query.
+     *
+     * This is used as independent evidence by the Geoapify smart geocoder when
+     * Geoapify returns multiple equally strong building/address candidates. It
+     * deliberately reuses the existing ANNCSU parser, endpoint and exact-record
+     * validator instead of introducing a second client.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function anncsu_exact_candidates_for_query(string $query): array
+    {
+        $structured = $this->build_structured_address($query);
+        if (null === $structured) {
+            return [];
+        }
+
+        $anncsu_endpoint = $this->anncsu_endpoint();
+        if ('' === $anncsu_endpoint) {
+            return [];
+        }
+
+        $candidates = $this->lookup_anncsu_exact_candidates(
+            $anncsu_endpoint,
+            $structured
+        );
+
+        return is_array($candidates) ? $candidates : [];
+    }
+
     private function lookup_free_form_candidates(string $endpoint, string $query)
     {
         return $this->lookup_nominatim_candidates(

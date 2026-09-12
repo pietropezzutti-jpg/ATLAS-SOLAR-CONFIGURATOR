@@ -8,12 +8,15 @@
  * unavailable, the request falls back to the existing Nominatim/ANNCSU
  * geocoder without changing its safety rules.
  *
- * Candidate quality R2 removes generic city/locality/municipality/county
+ * Candidate quality removes generic city/locality/municipality/county
  * results when Geoapify also returned a reliable address/building candidate,
  * then deduplicates equivalent candidates without collapsing genuine address
- * ambiguity. Building snap R1 remains conservative: only one high-confidence
- * candidate can be enriched, and only one building Polygon/MultiPolygon within
- * 200 metres may move the marker.
+ * ambiguity. For address-like queries, administrative-only Geoapify results are
+ * rejected and the existing fallback geocoder is used. When multiple strong
+ * building candidates remain, ANNCSU exact-civic evidence may select one only
+ * if the distance comparison has a clear winner. Building snap R1 remains
+ * conservative: only one high-confidence candidate can be enriched, and only
+ * one building Polygon/MultiPolygon within 200 metres may move the marker.
  *
  * @package AtlasSolarConfigurator
  */
@@ -35,6 +38,9 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
     private const BUILDING_SNAP_MIN_CONFIDENCE = 0.90;
     private const BUILDING_SNAP_MIN_BUILDING_CONFIDENCE = 0.80;
     private const CANDIDATE_QUALITY_MIN_CONFIDENCE = 0.70;
+    private const ANNCSU_TIEBREAKER_MAX_WINNER_DISTANCE_METERS = 80.0;
+    private const ANNCSU_TIEBREAKER_MIN_DISTANCE_DELTA_METERS = 30.0;
+    private const ANNCSU_TIEBREAKER_MAX_WINNER_RATIO = 0.60;
 
     private Atlas_Solar_Configurator_Geocoder $fallback;
 
@@ -87,7 +93,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             return $this->fallback->geocode($request);
         }
 
-        $cache_key = 'asc_geoapify_v4_' . md5(strtolower($query));
+        $cache_key = 'asc_geoapify_v5_' . md5(strtolower($query));
         $cached = get_transient($cache_key);
         if (false !== $cached && is_array($cached) && isset($cached['candidates'])) {
             $cached_candidates = is_array($cached['candidates']) ? $cached['candidates'] : [];
@@ -174,7 +180,8 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             ];
         }
 
-        $candidates = $this->quality_filter_candidates($candidates);
+        $candidates = $this->quality_filter_candidates($candidates, $query);
+        $candidates = $this->maybe_resolve_building_tiebreaker($candidates, $query);
 
         if (1 === count($candidates)) {
             $candidates[0] = $this->maybe_snap_unique_candidate_to_building($candidates[0], $api_key);
@@ -198,12 +205,8 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
         return '' !== $this->api_key();
     }
 
-    private function quality_filter_candidates(array $candidates): array
+    private function quality_filter_candidates(array $candidates, string $query): array
     {
-        if (count($candidates) < 2) {
-            return $candidates;
-        }
-
         $has_reliable_address = false;
         foreach ($candidates as $candidate) {
             if ($this->candidate_is_reliable_address($candidate)) {
@@ -212,19 +215,93 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             }
         }
 
+        if (
+            $this->query_looks_like_address($query)
+            && !$has_reliable_address
+            && $this->all_candidates_are_generic_administrative($candidates)
+        ) {
+            return [];
+        }
+
+        if (count($candidates) < 2) {
+            return $candidates;
+        }
+
         if ($has_reliable_address) {
-            $generic_types = ['city', 'locality', 'municipality', 'county'];
             $candidates = array_values(
                 array_filter(
                     $candidates,
-                    static function (array $candidate) use ($generic_types): bool {
-                        return !in_array((string) ($candidate['type'] ?? ''), $generic_types, true);
+                    function (array $candidate): bool {
+                        return !$this->candidate_is_generic_administrative($candidate);
                     }
                 )
             );
         }
 
         return $this->deduplicate_candidates($candidates);
+    }
+
+    private function query_looks_like_address(string $query): bool
+    {
+        $normalized = strtolower((string) preg_replace('/\s+/u', ' ', trim($query)));
+        if ('' === $normalized || !preg_match('/\d+[a-z]?/u', $normalized)) {
+            return false;
+        }
+
+        return 1 === preg_match(
+            '/\b(via|viale|vicolo|piazza|piazzale|corso|strada|largo|contrada|frazione|localita|località|borgo|rotabile)\b/u',
+            $normalized
+        );
+    }
+
+    private function all_candidates_are_generic_administrative(array $candidates): bool
+    {
+        if (0 === count($candidates)) {
+            return false;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (!$this->candidate_is_generic_administrative($candidate)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function candidate_is_generic_administrative(array $candidate): bool
+    {
+        $generic_types = [
+            'administrative',
+            'city',
+            'county',
+            'district',
+            'locality',
+            'municipality',
+            'neighbourhood',
+            'province',
+            'state',
+            'suburb',
+            'town',
+            'village',
+        ];
+        $result_type = sanitize_key((string) ($candidate['type'] ?? ''));
+        if (in_array($result_type, $generic_types, true)) {
+            return true;
+        }
+
+        $match_type = sanitize_key((string) ($candidate['matchType'] ?? ''));
+        return in_array(
+            $match_type,
+            [
+                'match_by_city_or_disrict',
+                'match_by_city_or_district',
+                'match_by_district',
+                'match_by_locality',
+                'match_by_municipality',
+            ],
+            true
+        );
     }
 
     private function candidate_is_reliable_address(array $candidate): bool
@@ -272,6 +349,119 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
         }
 
         return $unique;
+    }
+
+    private function maybe_resolve_building_tiebreaker(array $candidates, string $query): array
+    {
+        if (count($candidates) < 2) {
+            return $candidates;
+        }
+
+        foreach ($candidates as $candidate) {
+            if (!$this->candidate_is_tiebreaker_candidate($candidate)) {
+                return $candidates;
+            }
+        }
+
+        if (!method_exists($this->fallback, 'anncsu_exact_candidates_for_query')) {
+            return $this->annotate_tiebreaker($candidates, false, 'anncsu_resolver_unavailable');
+        }
+
+        $anncsu_candidates = $this->fallback->anncsu_exact_candidates_for_query($query);
+        if (1 !== count($anncsu_candidates)) {
+            return $this->annotate_tiebreaker(
+                $candidates,
+                false,
+                0 === count($anncsu_candidates) ? 'anncsu_exact_civic_unavailable' : 'anncsu_exact_civic_ambiguous'
+            );
+        }
+
+        $anncsu = $anncsu_candidates[0];
+        if (
+            !$this->valid_coordinates($anncsu['latitude'] ?? null, $anncsu['longitude'] ?? null)
+        ) {
+            return $this->annotate_tiebreaker($candidates, false, 'anncsu_exact_civic_invalid_coordinates');
+        }
+
+        $distances = [];
+        foreach ($candidates as $index => $candidate) {
+            if (!$this->valid_coordinates($candidate['latitude'] ?? null, $candidate['longitude'] ?? null)) {
+                return $this->annotate_tiebreaker($candidates, false, 'geoapify_candidate_invalid_coordinates');
+            }
+
+            $distances[] = [
+                'index' => $index,
+                'distance' => $this->distance_meters(
+                    (float) $anncsu['latitude'],
+                    (float) $anncsu['longitude'],
+                    (float) $candidate['latitude'],
+                    (float) $candidate['longitude']
+                ),
+            ];
+        }
+
+        usort(
+            $distances,
+            static function (array $left, array $right): int {
+                return $left['distance'] <=> $right['distance'];
+            }
+        );
+
+        $winner = $distances[0];
+        $runner_up = $distances[1];
+        $delta = $runner_up['distance'] - $winner['distance'];
+        $ratio = $runner_up['distance'] > 0.0 ? $winner['distance'] / $runner_up['distance'] : 1.0;
+
+        if (
+            $winner['distance'] > self::ANNCSU_TIEBREAKER_MAX_WINNER_DISTANCE_METERS
+            || $delta < self::ANNCSU_TIEBREAKER_MIN_DISTANCE_DELTA_METERS
+            || $ratio > self::ANNCSU_TIEBREAKER_MAX_WINNER_RATIO
+        ) {
+            return $this->annotate_tiebreaker($candidates, false, 'anncsu_distance_not_discriminating');
+        }
+
+        $selected = $candidates[$winner['index']];
+        $selected['anncsuTiebreaker'] = [
+            'attempted' => true,
+            'applied' => true,
+            'reason' => 'clear_anncsu_exact_civic_winner',
+            'winnerDistanceMeters' => round($winner['distance'], 1),
+            'runnerUpDistanceMeters' => round($runner_up['distance'], 1),
+            'distanceDeltaMeters' => round($delta, 1),
+            'source' => 'anncsu_exact_civic',
+        ];
+
+        return [$selected];
+    }
+
+    private function candidate_is_tiebreaker_candidate(array $candidate): bool
+    {
+        $confidence = $candidate['confidence'] ?? null;
+        $building_confidence = $candidate['confidenceBuildingLevel'] ?? null;
+        $match_type = (string) ($candidate['matchType'] ?? '');
+        $result_type = (string) ($candidate['type'] ?? '');
+
+        return is_numeric($confidence)
+            && (float) $confidence >= self::BUILDING_SNAP_MIN_CONFIDENCE
+            && is_numeric($building_confidence)
+            && (float) $building_confidence >= self::BUILDING_SNAP_MIN_BUILDING_CONFIDENCE
+            && in_array($match_type, ['full_match', 'match_by_building'], true)
+            && in_array($result_type, ['building', 'amenity', 'address'], true);
+    }
+
+    private function annotate_tiebreaker(array $candidates, bool $applied, string $reason): array
+    {
+        foreach ($candidates as $index => $candidate) {
+            $candidate['anncsuTiebreaker'] = [
+                'attempted' => true,
+                'applied' => $applied,
+                'reason' => $reason,
+                'source' => 'anncsu_exact_civic',
+            ];
+            $candidates[$index] = $candidate;
+        }
+
+        return $candidates;
     }
 
     private function maybe_snap_unique_candidate_to_building(array $candidate, string $api_key): array
