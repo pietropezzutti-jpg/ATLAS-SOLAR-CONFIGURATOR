@@ -68,10 +68,10 @@ if (!defined('ABSPATH')) {
         </div>
 
         <p class="asc-map-attribution">
-            Puoi scegliere tra mappa stradale e ortofoto nazionale dal controllo in alto a destra della mappa.
-            La base stradale usa OpenStreetMap; l'ortofoto nazionale usa il servizio pubblico MASE / Geoportale Nazionale con immagini AGEA 2009-2012.
+            Puoi scegliere tra mappa stradale e foto aerea dal controllo in alto a destra.
+            Il configuratore seleziona automaticamente la fonte fotografica pubblica più recente tra quelle verificate per l'area; dove non è disponibile usa l'ortofoto nazionale MASE / Geoportale Nazionale come fallback.
             La ricerca indirizzi può usare <a href="https://www.geoapify.com/" target="_blank" rel="noopener noreferrer">Geoapify</a> quando configurato, con fallback ai provider open data già presenti.
-            La fotografia aerea è utile per riconoscere il tetto ma non rappresenta necessariamente la situazione attuale.
+            La fotografia aerea può avere una data diversa a seconda della zona e serve per riconoscere visivamente il tetto.
             La posizione dell'immobile diventa valida solo dopo la conferma sulla mappa.
         </p>
     </div>
