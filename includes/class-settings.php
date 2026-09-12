@@ -34,6 +34,11 @@ final class Atlas_Solar_Configurator_Settings
             'tile_url' => 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             'tile_attribution_label' => '© OpenStreetMap contributors',
             'tile_attribution_url' => 'https://www.openstreetmap.org/copyright',
+            'aerial_enabled' => true,
+            'aerial_wms_url' => 'https://wms.pcn.minambiente.it/ogc?map=/ms_ogc/WMS_v1.3/raster/ortofoto_colore_12.map',
+            'aerial_wms_layers' => 'OI.ORTOIMMAGINI.2012',
+            'aerial_attribution_label' => 'Ortofoto AGEA 2009-2012 - MASE / Geoportale Nazionale',
+            'aerial_attribution_url' => 'https://geodati.gov.it/geoportale/',
         ];
     }
 
@@ -63,6 +68,18 @@ final class Atlas_Solar_Configurator_Settings
             'defaultZoom' => 5,
             'propertyZoom' => 19,
             'maxZoom' => 19,
+            'aerial' => [
+                'enabled' => (bool) $options['aerial_enabled'],
+                'label' => 'Ortofoto nazionale (2009-2012)',
+                'wmsUrl' => $options['aerial_wms_url'],
+                'layers' => $options['aerial_wms_layers'],
+                'version' => '1.1.1',
+                'format' => 'image/png',
+                'transparent' => false,
+                'attributionLabel' => $options['aerial_attribution_label'],
+                'attributionUrl' => $options['aerial_attribution_url'],
+                'autoEnableAtPropertyZoom' => true,
+            ],
         ];
     }
 
@@ -88,11 +105,32 @@ final class Atlas_Solar_Configurator_Settings
                 $value['tile_attribution_url'] ?? '',
                 $defaults['tile_attribution_url']
             ),
+            'aerial_enabled' => !isset($value['aerial_enabled'])
+                ? (bool) $defaults['aerial_enabled']
+                : (bool) $value['aerial_enabled'],
+            'aerial_wms_url' => $this->sanitize_endpoint(
+                $value['aerial_wms_url'] ?? '',
+                $defaults['aerial_wms_url']
+            ),
+            'aerial_wms_layers' => $this->sanitize_wms_layers(
+                $value['aerial_wms_layers'] ?? '',
+                $defaults['aerial_wms_layers']
+            ),
+            'aerial_attribution_label' => $this->sanitize_label(
+                $value['aerial_attribution_label'] ?? '',
+                $defaults['aerial_attribution_label']
+            ),
+            'aerial_attribution_url' => $this->sanitize_endpoint(
+                $value['aerial_attribution_url'] ?? '',
+                $defaults['aerial_attribution_url']
+            ),
         ];
     }
 
     public function get_summary(): array
     {
+        $options = $this->get_map_options();
+
         return [
             'Plugin version' => ASC_VERSION,
             'Mode' => 'Address + map confirmation demo',
@@ -102,6 +140,9 @@ final class Atlas_Solar_Configurator_Settings
             'ONE CLICK' => 'ATLAS-owned; not called by WordPress public flow',
             'Geocoder' => 'Enabled through WordPress proxy',
             'Map tiles' => 'Enabled client-side',
+            'National orthophoto' => !empty($options['aerial_enabled'])
+                ? 'Enabled: MASE / Geoportale Nazionale WMS, AGEA 2009-2012'
+                : 'Disabled',
             'Mock solar result' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',
             'Lead transmission' => 'Disabled',
         ];
@@ -152,5 +193,16 @@ final class Atlas_Solar_Configurator_Settings
         $candidate = sanitize_text_field((string) $value);
 
         return '' === $candidate ? $default : $candidate;
+    }
+
+    private function sanitize_wms_layers($value, string $default): string
+    {
+        $candidate = trim(wp_strip_all_tags((string) $value));
+
+        if ('' === $candidate || !preg_match('/^[A-Za-z0-9_.:,\-]+$/', $candidate)) {
+            return $default;
+        }
+
+        return $candidate;
     }
 }
