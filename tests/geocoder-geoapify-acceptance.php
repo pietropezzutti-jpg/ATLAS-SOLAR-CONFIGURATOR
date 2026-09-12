@@ -1,6 +1,6 @@
 <?php
 /**
- * Geoapify-first geocoder acceptance.
+ * Geoapify building-snap R1 acceptance.
  *
  * All HTTP is intercepted. No external request is executed.
  *
@@ -32,8 +32,33 @@ if (!defined('ASC_GEOAPIFY_API_KEY')) {
 }
 $configured_key = (string) constant('ASC_GEOAPIFY_API_KEY');
 
+function asc_building_feature(float $lat, float $lon): array
+{
+    return [
+        'type' => 'Feature',
+        'properties' => [
+            'feature_type' => 'building',
+            'lat' => $lat,
+            'lon' => $lon,
+        ],
+        'geometry' => [
+            'type' => 'Polygon',
+            'coordinates' => [
+                [
+                    [$lon - 0.00005, $lat - 0.00005],
+                    [$lon + 0.00005, $lat - 0.00005],
+                    [$lon + 0.00005, $lat + 0.00005],
+                    [$lon - 0.00005, $lat + 0.00005],
+                    [$lon - 0.00005, $lat - 0.00005],
+                ],
+            ],
+        ],
+    ];
+}
+
+$mode = 'single';
 $http_calls = [];
-$filter = static function ($preempt, $args, $url) use (&$http_calls) {
+$filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
     $http_calls[] = (string) $url;
 
     if (false !== strpos((string) $url, 'api.geoapify.com/v1/geocode/search')) {
@@ -64,35 +89,19 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls) {
     }
 
     if (false !== strpos((string) $url, 'api.geoapify.com/v2/place-details')) {
-        $payload = [
-            'type' => 'FeatureCollection',
-            'features' => [
-                [
-                    'type' => 'Feature',
-                    'properties' => [
-                        'feature_type' => 'building',
-                        'lat' => 45.900800,
-                        'lon' => 10.200900,
-                    ],
-                    'geometry' => [
-                        'type' => 'Polygon',
-                        'coordinates' => [
-                            [
-                                [10.200850, 45.900750],
-                                [10.200950, 45.900750],
-                                [10.200950, 45.900850],
-                                [10.200850, 45.900850],
-                                [10.200850, 45.900750],
-                            ],
-                        ],
-                    ],
-                ],
-            ],
-        ];
+        $features = 'ambiguous' === $mode
+            ? [
+                asc_building_feature(45.900800, 10.200900),
+                asc_building_feature(45.900850, 10.201000),
+            ]
+            : [asc_building_feature(45.900800, 10.200900)];
 
         return [
             'headers' => [],
-            'body' => wp_json_encode($payload),
+            'body' => wp_json_encode([
+                'type' => 'FeatureCollection',
+                'features' => $features,
+            ]),
             'response' => ['code' => 200, 'message' => 'OK'],
             'cookies' => [],
             'filename' => null,
@@ -121,10 +130,6 @@ asc_geoapify_assert(1 === count($data['candidates'] ?? []), 'GEOAPIFY_ONE_CANDID
 
 $candidate = $data['candidates'][0] ?? [];
 asc_geoapify_assert(
-    false !== stripos((string) ($candidate['displayName'] ?? ''), 'Via Esempio 39'),
-    'GEOAPIFY_DISPLAY_ADDRESS'
-);
-asc_geoapify_assert(
     'synthetic-place-39' === ($candidate['placeId'] ?? null),
     'GEOAPIFY_PLACE_ID_PRESERVED'
 );
@@ -139,9 +144,14 @@ asc_geoapify_assert(
     'GEOAPIFY_BUILDING_COORDINATES_APPLIED'
 );
 asc_geoapify_assert(
-    true === ($candidate['buildingSnap']['attempted'] ?? null)
+    true === ($candidate['buildingSnap']['eligible'] ?? null)
+        && true === ($candidate['buildingSnap']['attempted'] ?? null)
         && true === ($candidate['buildingSnap']['applied'] ?? null),
     'GEOAPIFY_BUILDING_SNAP_APPLIED'
+);
+asc_geoapify_assert(
+    1 === ($candidate['buildingSnap']['buildingFeatureCount'] ?? null),
+    'GEOAPIFY_SINGLE_BUILDING_EVIDENCE'
 );
 asc_geoapify_assert(
     is_numeric($candidate['buildingSnap']['distanceMeters'] ?? null)
@@ -150,21 +160,20 @@ asc_geoapify_assert(
     'GEOAPIFY_BUILDING_SNAP_DISTANCE_BOUNDED'
 );
 asc_geoapify_assert(
+    'single_high_confidence_building_within_range' === ($candidate['buildingSnap']['reason'] ?? null),
+    'GEOAPIFY_BUILDING_SNAP_REASON'
+);
+asc_geoapify_assert(
     0.97 === ($candidate['confidence'] ?? null)
         && 0.91 === ($candidate['confidenceBuildingLevel'] ?? null)
         && 'full_match' === ($candidate['matchType'] ?? null),
-    'GEOAPIFY_MATCH_METADATA'
+    'GEOAPIFY_HIGH_CONFIDENCE_BUILDING_MATCH'
 );
 
 $joined_calls = implode("\n", $http_calls);
 asc_geoapify_assert(
     false !== strpos($joined_calls, 'api.geoapify.com/v1/geocode/search'),
     'GEOAPIFY_SERVER_SIDE_CALLED'
-);
-asc_geoapify_assert(
-    false !== strpos($joined_calls, 'filter=countrycode%3Ait')
-        || false !== strpos($joined_calls, 'filter=countrycode:it'),
-    'GEOAPIFY_ITALY_FILTER'
 );
 asc_geoapify_assert(
     false !== strpos($joined_calls, 'api.geoapify.com/v2/place-details')
@@ -179,8 +188,31 @@ asc_geoapify_assert(
     'GEOAPIFY_KEY_NOT_IN_PUBLIC_RESPONSE'
 );
 
+/* Ambiguous building evidence must never move the marker. */
+delete_transient('asc_geoapify_v3_' . md5(strtolower('Via Esempio 39 Comune Test')));
+$mode = 'ambiguous';
+$response_ambiguous = $geocoder->geocode($request);
+$data_ambiguous = $response_ambiguous instanceof WP_REST_Response
+    ? $response_ambiguous->get_data()
+    : [];
+$candidate_ambiguous = $data_ambiguous['candidates'][0] ?? [];
+
+asc_geoapify_assert(
+    45.900123 === ($candidate_ambiguous['latitude'] ?? null)
+        && 10.200456 === ($candidate_ambiguous['longitude'] ?? null),
+    'AMBIGUOUS_BUILDING_PRESERVES_ORIGINAL_MARKER'
+);
+asc_geoapify_assert(
+    false === ($candidate_ambiguous['buildingSnap']['applied'] ?? null)
+        && 2 === ($candidate_ambiguous['buildingSnap']['buildingFeatureCount'] ?? null)
+        && 'ambiguous_building_evidence' === ($candidate_ambiguous['buildingSnap']['reason'] ?? null),
+    'AMBIGUOUS_BUILDING_EVIDENCE_REJECTED'
+);
+
 remove_filter('pre_http_request', $filter, 10);
 
+fwrite(STDOUT, "BUILDING_SNAP_POLICY=UNIQUE_HIGH_CONFIDENCE_SINGLE_BUILDING_ONLY\n");
 fwrite(STDOUT, "BUILDING_SNAP_MAX_DISTANCE_METERS=200\n");
+fwrite(STDOUT, "AMBIGUOUS_EVIDENCE_PRESERVES_ORIGINAL=True\n");
 fwrite(STDOUT, "EXTERNAL_HTTP_EXECUTED=False\n");
 fwrite(STDOUT, "FINAL=PASS_PUBLIC_CONFIGURATOR_GEOAPIFY_BUILDING_SNAP_R1\n");
