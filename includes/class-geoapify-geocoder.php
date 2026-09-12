@@ -8,11 +8,12 @@
  * unavailable, the request falls back to the existing Nominatim/ANNCSU
  * geocoder without changing its safety rules.
  *
- * Building snap R1 is deliberately conservative: a unique Geoapify candidate
- * must have high overall confidence and building-level confidence before a
- * Place Details lookup is attempted. The marker moves only when exactly one
- * building Polygon/MultiPolygon is returned within 200 metres. Ambiguous or
- * weak evidence always preserves the original address coordinate.
+ * Candidate quality R2 removes generic city/locality/municipality/county
+ * results when Geoapify also returned a reliable address/building candidate,
+ * then deduplicates equivalent candidates without collapsing genuine address
+ * ambiguity. Building snap R1 remains conservative: only one high-confidence
+ * candidate can be enriched, and only one building Polygon/MultiPolygon within
+ * 200 metres may move the marker.
  *
  * @package AtlasSolarConfigurator
  */
@@ -33,6 +34,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
     private const BUILDING_SNAP_MAX_DISTANCE_METERS = 200.0;
     private const BUILDING_SNAP_MIN_CONFIDENCE = 0.90;
     private const BUILDING_SNAP_MIN_BUILDING_CONFIDENCE = 0.80;
+    private const CANDIDATE_QUALITY_MIN_CONFIDENCE = 0.70;
 
     private Atlas_Solar_Configurator_Geocoder $fallback;
 
@@ -85,7 +87,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             return $this->fallback->geocode($request);
         }
 
-        $cache_key = 'asc_geoapify_v3_' . md5(strtolower($query));
+        $cache_key = 'asc_geoapify_v4_' . md5(strtolower($query));
         $cached = get_transient($cache_key);
         if (false !== $cached && is_array($cached) && isset($cached['candidates'])) {
             $cached_candidates = is_array($cached['candidates']) ? $cached['candidates'] : [];
@@ -172,6 +174,8 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             ];
         }
 
+        $candidates = $this->quality_filter_candidates($candidates);
+
         if (1 === count($candidates)) {
             $candidates[0] = $this->maybe_snap_unique_candidate_to_building($candidates[0], $api_key);
         }
@@ -192,6 +196,82 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
     public function configured(): bool
     {
         return '' !== $this->api_key();
+    }
+
+    private function quality_filter_candidates(array $candidates): array
+    {
+        if (count($candidates) < 2) {
+            return $candidates;
+        }
+
+        $has_reliable_address = false;
+        foreach ($candidates as $candidate) {
+            if ($this->candidate_is_reliable_address($candidate)) {
+                $has_reliable_address = true;
+                break;
+            }
+        }
+
+        if ($has_reliable_address) {
+            $generic_types = ['city', 'locality', 'municipality', 'county'];
+            $candidates = array_values(
+                array_filter(
+                    $candidates,
+                    static function (array $candidate) use ($generic_types): bool {
+                        return !in_array((string) ($candidate['type'] ?? ''), $generic_types, true);
+                    }
+                )
+            );
+        }
+
+        return $this->deduplicate_candidates($candidates);
+    }
+
+    private function candidate_is_reliable_address(array $candidate): bool
+    {
+        $result_type = (string) ($candidate['type'] ?? '');
+        if (!in_array($result_type, ['building', 'address', 'amenity'], true)) {
+            return false;
+        }
+
+        $confidence = $candidate['confidence'] ?? null;
+        $building_confidence = $candidate['confidenceBuildingLevel'] ?? null;
+        $match_type = (string) ($candidate['matchType'] ?? '');
+
+        return (
+            is_numeric($confidence)
+            && (float) $confidence >= self::CANDIDATE_QUALITY_MIN_CONFIDENCE
+        ) || (
+            is_numeric($building_confidence)
+            && (float) $building_confidence >= 0.50
+        ) || in_array($match_type, ['full_match', 'match_by_building'], true);
+    }
+
+    private function deduplicate_candidates(array $candidates): array
+    {
+        $seen = [];
+        $unique = [];
+
+        foreach ($candidates as $candidate) {
+            $place_id = trim((string) ($candidate['placeId'] ?? ''));
+            if ('' !== $place_id) {
+                $key = 'place:' . $place_id;
+            } else {
+                $display_name = strtolower(trim((string) ($candidate['displayName'] ?? '')));
+                $latitude = isset($candidate['latitude']) ? round((float) $candidate['latitude'], 6) : 0.0;
+                $longitude = isset($candidate['longitude']) ? round((float) $candidate['longitude'], 6) : 0.0;
+                $key = 'fallback:' . md5($display_name . '|' . $latitude . '|' . $longitude);
+            }
+
+            if (isset($seen[$key])) {
+                continue;
+            }
+
+            $seen[$key] = true;
+            $unique[] = $candidate;
+        }
+
+        return $unique;
     }
 
     private function maybe_snap_unique_candidate_to_building(array $candidate, string $api_key): array
