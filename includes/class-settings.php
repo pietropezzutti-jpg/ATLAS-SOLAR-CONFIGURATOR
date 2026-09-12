@@ -70,7 +70,7 @@ final class Atlas_Solar_Configurator_Settings
             'maxZoom' => 19,
             'aerial' => [
                 'enabled' => (bool) $options['aerial_enabled'],
-                'label' => 'Ortofoto nazionale (2009-2012)',
+                'label' => 'Foto aerea',
                 'wmsUrl' => $options['aerial_wms_url'],
                 'layers' => $options['aerial_wms_layers'],
                 'version' => '1.1.1',
@@ -79,6 +79,26 @@ final class Atlas_Solar_Configurator_Settings
                 'attributionLabel' => $options['aerial_attribution_label'],
                 'attributionUrl' => $options['aerial_attribution_url'],
                 'autoEnableAtPropertyZoom' => true,
+                'providers' => [
+                    [
+                        'id' => 'emilia-romagna-rer-2023-24',
+                        'enabled' => true,
+                        'label' => 'Ortofoto Emilia-Romagna 2023-24',
+                        'wmsUrl' => 'https://servizigis.regione.emilia-romagna.it/wms/rer2023_24_rgb',
+                        'layers' => 'RER2023_24_RGB',
+                        'version' => '1.1.1',
+                        'format' => 'image/png',
+                        'transparent' => false,
+                        'attributionLabel' => 'Regione Emilia-Romagna - Ortofoto RER 2023-24 - CC BY 4.0',
+                        'attributionUrl' => 'https://geoportale.regione.emilia-romagna.it/',
+                        'bounds' => [
+                            'south' => 43.703388,
+                            'west' => 9.172921,
+                            'north' => 45.169558,
+                            'east' => 12.850398,
+                        ],
+                    ],
+                ],
             ],
         ];
     }
@@ -145,8 +165,8 @@ final class Atlas_Solar_Configurator_Settings
                 ? 'Geoapify primary; Nominatim + ANNCSU fallback'
                 : 'Nominatim + ANNCSU fallback; Geoapify key not configured',
             'Map tiles' => 'Enabled client-side',
-            'National orthophoto' => !empty($options['aerial_enabled'])
-                ? 'Enabled: MASE / Geoportale Nazionale WMS, AGEA 2009-2012'
+            'Public aerial imagery' => !empty($options['aerial_enabled'])
+                ? 'Automatic provider registry: recent verified regional imagery when available; national MASE fallback otherwise'
                 : 'Disabled',
             'Mock solar result' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',
             'Lead transmission' => 'Disabled',
