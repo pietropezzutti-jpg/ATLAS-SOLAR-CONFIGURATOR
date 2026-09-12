@@ -508,9 +508,9 @@ final class Atlas_Solar_Configurator_Geocoder
      * Parse a common Italian free-form address into exact structured fields.
      *
      * Example:
-     *   via degli scudi 6 Costa volpino bg
-     * becomes street=6 via degli scudi, street_name=via degli scudi,
-     * civic=6 and city=Costa volpino.
+     *   via esempio 39 Comune Test
+     * becomes street=39 via esempio, street_name=via esempio,
+     * civic=39 and city=Comune Test.
      */
     private function build_structured_address(string $query): ?array
     {
