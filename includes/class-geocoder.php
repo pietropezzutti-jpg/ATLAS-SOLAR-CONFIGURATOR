@@ -8,12 +8,11 @@
  * - globally rate-limited before upstream access;
  * - sent with an identifying User-Agent.
  *
- * PLUGIN-005 geocoder recovery progressively relaxes an unresolved address:
- * exact address -> street/locality -> locality only. The locality-only fallback
- * is used only when a likely civic-number token can be identified safely. It
- * lets the configurator open the map near the requested municipality so the
- * user can place and confirm the exact property position instead of failing
- * hard when the public geocoder lacks house-number or street coverage.
+ * Civic addresses are never replaced by municipality-centre results. When the
+ * free-form lookup cannot resolve an address, the proxy may retry the same
+ * address using Nominatim's structured street/city search. If the exact civic
+ * address still cannot be resolved, the request remains not_found and the
+ * frontend must not treat a street or locality centroid as the property.
  *
  * @package AtlasSolarConfigurator
  */
@@ -28,7 +27,7 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
     private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
-    private const CACHE_STRATEGY_VERSION = '3';
+    private const CACHE_STRATEGY_VERSION = '4';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
     private const FALLBACK_DELAY_MICROSECONDS = 1100000;
 
@@ -136,60 +135,38 @@ final class Atlas_Solar_Configurator_Geocoder
 
         set_transient(self::RATE_LIMIT_KEY, (string) $now, 2);
 
-        $exact = $this->lookup_candidates($endpoint, $query);
-        if (is_wp_error($exact)) {
-            return $exact;
+        $candidates = $this->lookup_free_form_candidates($endpoint, $query);
+        if (is_wp_error($candidates)) {
+            return $candidates;
         }
 
-        $candidates = $exact;
         $effective_query = $query;
         $fallback_used = false;
         $fallback_attempted = false;
         $fallback_mode = 'none';
-        $relaxed_query = '';
 
         if (0 === count($candidates)) {
-            $relaxed_query = $this->build_relaxed_query($query);
+            $structured = $this->build_structured_address($query);
 
-            if ('' !== $relaxed_query && 0 !== strcasecmp($relaxed_query, $query)) {
+            if (null !== $structured) {
                 $fallback_attempted = true;
                 $this->wait_before_fallback();
 
-                $relaxed = $this->lookup_candidates($endpoint, $relaxed_query);
-                if (is_wp_error($relaxed)) {
-                    return $relaxed;
+                $structured_candidates = $this->lookup_structured_candidates(
+                    $endpoint,
+                    $structured['street'],
+                    $structured['city']
+                );
+
+                if (is_wp_error($structured_candidates)) {
+                    return $structured_candidates;
                 }
 
-                if (count($relaxed) > 0) {
-                    $candidates = $relaxed;
-                    $effective_query = $relaxed_query;
+                if (count($structured_candidates) > 0) {
+                    $candidates = $structured_candidates;
+                    $effective_query = $structured['street'] . ', ' . $structured['city'];
                     $fallback_used = true;
-                    $fallback_mode = 'street';
-                }
-            }
-        }
-
-        if (0 === count($candidates)) {
-            $locality_query = $this->build_locality_query($query);
-
-            if (
-                '' !== $locality_query
-                && 0 !== strcasecmp($locality_query, $query)
-                && ('' === $relaxed_query || 0 !== strcasecmp($locality_query, $relaxed_query))
-            ) {
-                $fallback_attempted = true;
-                $this->wait_before_fallback();
-
-                $locality = $this->lookup_candidates($endpoint, $locality_query);
-                if (is_wp_error($locality)) {
-                    return $locality;
-                }
-
-                if (count($locality) > 0) {
-                    $candidates = $locality;
-                    $effective_query = $locality_query;
-                    $fallback_used = true;
-                    $fallback_mode = 'locality';
+                    $fallback_mode = 'structured_exact';
                 }
             }
         }
@@ -222,17 +199,41 @@ final class Atlas_Solar_Configurator_Geocoder
         );
     }
 
-    private function lookup_candidates(string $endpoint, string $query)
+    private function lookup_free_form_candidates(string $endpoint, string $query)
+    {
+        return $this->lookup_candidates(
+            $endpoint,
+            [
+                'q' => $query,
+            ]
+        );
+    }
+
+    private function lookup_structured_candidates(string $endpoint, string $street, string $city)
+    {
+        return $this->lookup_candidates(
+            $endpoint,
+            [
+                'street' => $street,
+                'city' => $city,
+            ]
+        );
+    }
+
+    private function lookup_candidates(string $endpoint, array $query_args)
     {
         $url = add_query_arg(
-            [
-                'format' => 'jsonv2',
-                'addressdetails' => 1,
-                'limit' => 5,
-                'countrycodes' => 'it',
-                'accept-language' => 'it',
-                'q' => $query,
-            ],
+            array_merge(
+                [
+                    'format' => 'jsonv2',
+                    'addressdetails' => 1,
+                    'limit' => 5,
+                    'countrycodes' => 'it',
+                    'accept-language' => 'it',
+                    'layer' => 'address',
+                ],
+                $query_args
+            ),
             $endpoint
         );
 
@@ -326,47 +327,51 @@ final class Atlas_Solar_Configurator_Geocoder
         return $candidates;
     }
 
-    private function build_relaxed_query(string $query): string
+    /**
+     * Parse a common Italian free-form address into Nominatim structured fields.
+     *
+     * Example:
+     *   via degli scudi 6 Costa volpino bg
+     * becomes:
+     *   street = 6 via degli scudi
+     *   city   = Costa volpino
+     */
+    private function build_structured_address(string $query): ?array
     {
         $tokens = $this->normalized_address_tokens($query);
-        if (count($tokens) < 2) {
-            return trim($query);
+        if (count($tokens) < 4) {
+            return null;
         }
 
         $this->remove_trailing_province_code($tokens);
         $civic_index = $this->find_likely_civic_index($tokens);
 
-        if (null !== $civic_index) {
-            array_splice($tokens, $civic_index, 1);
+        if (null === $civic_index || $civic_index < 2 || $civic_index >= count($tokens) - 1) {
+            return null;
         }
 
-        return $this->tokens_to_query($tokens);
-    }
-
-    private function build_locality_query(string $query): string
-    {
-        $tokens = $this->normalized_address_tokens($query);
-        if (count($tokens) < 2) {
-            return '';
-        }
-
-        $this->remove_trailing_province_code($tokens);
-        $civic_index = $this->find_likely_civic_index($tokens);
-
-        if (null === $civic_index || $civic_index >= count($tokens) - 1) {
-            return '';
-        }
-
-        $locality_tokens = array_slice($tokens, $civic_index + 1);
+        $civic = trim((string) $tokens[$civic_index], " \t\n\r\0\x0B,.;");
+        $street_tokens = array_slice($tokens, 0, $civic_index);
+        $city_tokens = array_slice($tokens, $civic_index + 1);
 
         while (
-            count($locality_tokens) > 1
-            && preg_match('/^\d{5}$/', trim((string) $locality_tokens[0], " \t\n\r\0\x0B,. ;"))
+            count($city_tokens) > 1
+            && preg_match('/^\d{5}$/', trim((string) $city_tokens[0], " \t\n\r\0\x0B,.;"))
         ) {
-            array_shift($locality_tokens);
+            array_shift($city_tokens);
         }
 
-        return $this->tokens_to_query($locality_tokens);
+        $street_name = $this->tokens_to_query($street_tokens);
+        $city = $this->tokens_to_query($city_tokens);
+
+        if ('' === $street_name || '' === $city || '' === $civic) {
+            return null;
+        }
+
+        return [
+            'street' => $civic . ' ' . $street_name,
+            'city' => $city,
+        ];
     }
 
     private function normalized_address_tokens(string $query): array
