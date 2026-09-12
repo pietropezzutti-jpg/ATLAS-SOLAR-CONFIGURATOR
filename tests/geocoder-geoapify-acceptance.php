@@ -30,6 +30,7 @@ function asc_geoapify_assert(bool $condition, string $label): void
 if (!defined('ASC_GEOAPIFY_API_KEY')) {
     define('ASC_GEOAPIFY_API_KEY', 'test-server-side-key');
 }
+$configured_key = (string) constant('ASC_GEOAPIFY_API_KEY');
 
 $http_calls = [];
 $filter = static function ($preempt, $args, $url) use (&$http_calls) {
@@ -101,7 +102,7 @@ asc_geoapify_assert(
 
 $public_payload = wp_json_encode($data);
 asc_geoapify_assert(
-    false === strpos((string) $public_payload, 'test-server-side-key'),
+    '' === $configured_key || false === strpos((string) $public_payload, $configured_key),
     'GEOAPIFY_KEY_NOT_IN_PUBLIC_RESPONSE'
 );
 
