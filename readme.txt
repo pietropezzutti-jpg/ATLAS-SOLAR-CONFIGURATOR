@@ -4,62 +4,79 @@ Tags: solar, configurator, lead, photovoltaic, map, geocoding
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 0.3.0
+Stable tag: 0.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Public WordPress solar lead configurator with explicit map/property-position confirmation.
+Public WordPress solar lead configurator with explicit property-position confirmation and ATLAS public contract foundation.
 
 == Description ==
 
 ATLAS Solar Lead Configurator provides a public WordPress funnel for address resolution, property-position confirmation, property qualification, consumption profiling, a clearly labelled mock solar result and demo contact capture.
 
-Version 0.3.0 adds real address resolution and interactive map confirmation while keeping ATLAS-PLATFORM completely separate.
+Version 0.4.0 adds the PLUGIN-004 ATLAS public API boundary foundation. A same-origin WordPress REST route validates and normalizes a future Property Intelligence assessment request, but does not transmit anything to ATLAS in this release.
 
 Shortcode:
 
 [atlas_solar_configurator]
 
+Contract route:
+
+POST /wp-json/atlas-solar-configurator/v1/assessment-contract
+
+Successful contract validation returns BOUNDARY_READY with transmitted=false and atlasTransport=disabled.
+
+The contract accepts only technical assessment context such as confirmed property coordinates, address, property profile, consumption and energy profile. Contact and marketing data are explicitly rejected from this technical boundary.
+
+Public result statuses reserved for future ATLAS transport include PREVIEW_AVAILABLE, MANUAL_FALLBACK, DISAMBIGUATION_REQUIRED, IDENTITY_NOT_RESOLVED, IDENTITY_AMBIGUOUS, RNDT_RECORD_NOT_FOUND and RNDT_RECORD_AMBIGUOUS.
+
 The default geocoder is accessed through a same-origin WordPress REST proxy and is Nominatim-compatible. The default map uses Leaflet with OpenStreetMap tiles. Provider endpoints are configurable in WordPress admin.
 
-No ATLAS API, ONE CLICK, CRM, email, appointment or contract service is called in version 0.3.0.
-
-No contact data is transmitted externally. The only external request containing user-entered content is the address lookup sent to the configured geocoder provider.
+No ATLAS API, ONE CLICK, CRM, email, appointment or contract service is called in version 0.4.0.
 
 == Installation ==
 
-1. Upload a WordPress-compatible atlas-solar-configurator-0.3.0.zip from Plugins > Add New > Upload Plugin.
+1. Upload a WordPress-compatible atlas-solar-configurator-0.4.0.zip from Plugins > Add New > Upload Plugin.
 2. Activate the plugin.
 3. Add [atlas_solar_configurator] to a WordPress page.
-4. Review map/geocoder provider settings under ATLAS Configurator.
+4. Review map/geocoder and ATLAS boundary status under ATLAS Configurator.
 
 == Frequently Asked Questions ==
 
-= Does this plugin call ATLAS? =
+= Does 0.4.0 call ATLAS? =
 
-No. ATLAS integration is disabled in version 0.3.0.
+No. PLUGIN-004 defines and validates the public contract only. ATLAS transport remains disabled.
+
+= Why add the contract before the real transport? =
+
+To keep WordPress and ATLAS loosely coupled and to freeze a stable, minimal public request/response vocabulary before enabling production HTTPS integration.
+
+= Can contact or marketing data be sent through the assessment contract? =
+
+No. The technical boundary rejects those fields. Lead/contact transmission belongs to a separate commercial integration.
 
 = Does the plugin perform a real roof assessment? =
 
-No. The map confirms only the public property position. It does not create roof geometry. The solar result remains explicitly demo/mock.
-
-= What is sent to the geocoder? =
-
-Only the address query entered by the user. Contact details are not included.
-
-= Does the plugin use autocomplete? =
-
-No. Geocoding is triggered only when the user explicitly submits the address.
+No. The map confirms only the property position. Roof geometry and ONE CLICK remain ATLAS-owned. The current solar result remains explicitly demo/mock.
 
 = Can I change map/geocoder providers? =
 
 Yes. The geocoder endpoint, tile URL and tile attribution are configurable from the ATLAS Configurator admin page.
 
-= Are the default OpenStreetMap services suitable for unlimited production traffic? =
-
-No. The public Nominatim and OpenStreetMap tile services are capacity-limited and governed by their respective usage policies. Configure dedicated providers or self-hosted infrastructure for larger commercial traffic.
-
 == Changelog ==
+
+= 0.4.0 =
+
+* Add PLUGIN-004 ATLAS public API boundary foundation.
+* Add POST /atlas-solar-configurator/v1/assessment-contract.
+* Add contract version 1.0.
+* Require explicit confirmed property coordinates before contract acceptance.
+* Normalize property, consumption and energy-profile context.
+* Reject contact and marketing fields from the technical assessment boundary.
+* Freeze public ATLAS result status vocabulary.
+* Keep ATLAS transport disabled and transmitted=false.
+* Keep ONE CLICK and all roof intelligence ATLAS-owned.
+* Preserve the complete PLUGIN-003 geocoding/map/property-confirmation flow.
 
 = 0.3.0 =
 
@@ -72,9 +89,7 @@ No. The public Nominatim and OpenStreetMap tile services are capacity-limited an
 * Add draggable/click-adjustable property marker.
 * Add explicit property-position confirmation before Step 2.
 * Keep address latitude/longitude null until confirmation.
-* Add migration that prevents older unconfirmed sessions from bypassing Step 1.
-* Preserve the PLUGIN-002 property, consumption, mock-result, contact and tracking funnel.
-* Keep ATLAS, ONE CLICK and lead transmission disabled.
+* Preserve the PLUGIN-002 funnel and keep ATLAS/ONE CLICK disabled.
 
 = 0.2.0 =
 
@@ -85,8 +100,6 @@ No. The public Nominatim and OpenStreetMap tile services are capacity-limited an
 * Add demo contact capture and confirmation.
 * Add back navigation, reset and local-state persistence.
 * Preserve campaign attribution.
-* Correct address semantics so an entered address is not treated as a confirmed property.
-* Add migration from PLUGIN-001 local state.
 
 = 0.1.0 =
 

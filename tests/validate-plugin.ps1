@@ -15,6 +15,7 @@ $required = @(
     'includes/class-settings.php',
     'includes/class-session.php',
     'includes/class-geocoder.php',
+    'includes/class-atlas-boundary.php',
     'admin/class-admin.php',
     'admin/views/settings-page.php',
     'public/css/configurator.css',
@@ -46,16 +47,21 @@ if ($main -notmatch 'Plugin Name:\s*ATLAS Solar Lead Configurator') {
     throw 'Main plugin header is missing.'
 }
 
-if ($main -notmatch 'Version:\s*0\.3\.0') {
-    throw 'Plugin version header is not 0.3.0.'
+if ($main -notmatch 'Version:\s*0\.4\.0') {
+    throw 'Plugin version header is not 0.4.0.'
 }
 
-if ($main -notmatch "define\('ASC_VERSION', '0\.3\.0'\)") {
-    throw 'ASC_VERSION is not 0.3.0.'
+if ($main -notmatch "define\('ASC_VERSION', '0\.4\.0'\)") {
+    throw 'ASC_VERSION is not 0.4.0.'
 }
 
-if ($main -notmatch "includes/class-geocoder\.php") {
-    throw 'Geocoder class is not loaded by the plugin bootstrap.'
+foreach ($bootstrapToken in @(
+    'includes/class-geocoder.php',
+    'includes/class-atlas-boundary.php'
+)) {
+    if (-not $main.Contains($bootstrapToken)) {
+        throw "Missing bootstrap dependency: $bootstrapToken"
+    }
 }
 
 $plugin = Get-Content `
@@ -66,8 +72,14 @@ if ($plugin -notmatch "add_shortcode\('atlas_solar_configurator'") {
     throw 'Shortcode registration was not found.'
 }
 
-if ($plugin -notmatch "rest_api_init") {
-    throw 'REST geocoder registration was not found.'
+foreach ($token in @(
+    'Atlas_Solar_Configurator_Geocoder',
+    'Atlas_Solar_Configurator_Atlas_Boundary',
+    'rest_api_init'
+)) {
+    if (-not $plugin.Contains($token)) {
+        throw "Missing plugin composition token: $token"
+    }
 }
 
 $settings = Get-Content `
@@ -78,10 +90,12 @@ foreach ($token in @(
     'nominatim.openstreetmap.org/search',
     'tile.openstreetmap.org/{z}/{x}/{y}.png',
     'geocodeUrl',
-    'propertyZoom'
+    'propertyZoom',
+    'Contract v1 ready; transport disabled',
+    'ATLAS-owned; not called by WordPress'
 )) {
     if (-not $settings.Contains($token)) {
-        throw "Missing settings/map token: $token"
+        throw "Missing settings token: $token"
     }
 }
 
@@ -103,13 +117,34 @@ foreach ($token in @(
     }
 }
 
-if ($geocoder -match '(?i)autocomplete') {
-    $commentsRemoved = $geocoder -replace '(?ms)/\*.*?\*/', ''
-    $commentsRemoved = $commentsRemoved -replace '(?m)^\s*\*.*$', ''
+$boundary = Get-Content `
+    -LiteralPath (Join-Path $PluginRoot 'includes/class-atlas-boundary.php') `
+    -Raw
 
-    if ($commentsRemoved -match '(?i)autocomplete') {
-        throw 'Autocomplete implementation is forbidden in PLUGIN-003.'
+foreach ($token in @(
+    "CONTRACT_VERSION = '1.0'",
+    '/assessment-contract',
+    'BOUNDARY_READY',
+    "'transmitted' => false",
+    "'atlasTransport' => 'disabled'",
+    'PREVIEW_AVAILABLE',
+    'MANUAL_FALLBACK',
+    'DISAMBIGUATION_REQUIRED',
+    'IDENTITY_NOT_RESOLVED',
+    'IDENTITY_AMBIGUOUS',
+    'RNDT_RECORD_NOT_FOUND',
+    'RNDT_RECORD_AMBIGUOUS',
+    'propertyPosition',
+    'position_not_confirmed',
+    'forbidden_fields'
+)) {
+    if (-not $boundary.Contains($token)) {
+        throw "Missing PLUGIN-004 boundary token: $token"
     }
+}
+
+if ($boundary -match 'wp_remote_(get|post|request)') {
+    throw 'PLUGIN-004 boundary must not perform ATLAS transport.'
 }
 
 $template = Get-Content `
@@ -197,8 +232,18 @@ $readme = Get-Content `
     -LiteralPath (Join-Path $PluginRoot 'readme.txt') `
     -Raw
 
-if ($readme -notmatch 'Stable tag:\s*0\.3\.0') {
-    throw 'readme.txt stable tag is not 0.3.0.'
+if ($readme -notmatch 'Stable tag:\s*0\.4\.0') {
+    throw 'readme.txt stable tag is not 0.4.0.'
+}
+
+foreach ($token in @(
+    'assessment-contract',
+    'transmitted=false',
+    'atlasTransport=disabled'
+)) {
+    if (-not $readme.Contains($token)) {
+        throw "Missing PLUGIN-004 readme token: $token"
+    }
 }
 
 $secretPatterns = @(

@@ -1,35 +1,97 @@
 # ATLAS Solar Lead Configurator
 
-Version: 0.3.0
+Version: 0.4.0
 
-ATLAS Solar Lead Configurator is the public WordPress client for the ATLAS solar lead qualification funnel. It remains intentionally separate from ATLAS-PLATFORM: WordPress hosts the public experience, while ATLAS remains the future system of record for Property Intelligence, solar services, CRM, Sales, Proposal, Contract, Signature, Customer File and Delivery.
+ATLAS Solar Lead Configurator is the public WordPress client for the ATLAS solar lead qualification funnel. WordPress owns the public experience; ATLAS remains the system of record for Property Intelligence, ONE CLICK, CRM/Sales, Proposal, Contract, Signature, Customer File and Delivery.
 
-## PLUGIN-003 — Address resolution and property confirmation
+## PLUGIN-004 — ATLAS public API boundary foundation
 
-Version 0.3.0 preserves the PLUGIN-002 multi-step funnel and upgrades Step 1 from plain address capture to a real location-confirmation flow:
+Version 0.4.0 preserves the complete PLUGIN-003 address/map/property-confirmation flow and adds a transport-disabled public contract boundary for a future ATLAS assessment request.
 
-1. Address entry.
-2. Explicit, user-triggered geocoding.
-3. Zero/one/multiple-candidate handling.
-4. Interactive Leaflet map.
-5. Candidate marker that can be moved by drag or map click.
-6. Explicit property-position confirmation.
-7. Property profile.
-8. Consumption and energy profile.
-9. Clearly labelled mock solar result.
-10. Contact and privacy capture, followed by a demo confirmation screen.
-
-The shortcode remains:
+The new same-origin WordPress REST route is:
 
 ```text
-[atlas_solar_configurator]
+POST /wp-json/atlas-solar-configurator/v1/assessment-contract
 ```
+
+In 0.4.0 this route performs contract validation and normalization only. It does **not** call ATLAS or ONE CLICK and returns:
+
+```text
+status = BOUNDARY_READY
+transmitted = false
+atlasTransport = disabled
+contractVersion = 1.0
+```
+
+This lets the WordPress side and ATLAS side converge on one stable request/response contract before any production transport is enabled.
+
+## Assessment contract v1
+
+The accepted technical request contains only data relevant to property assessment:
+
+```json
+{
+  "sessionId": "optional-browser-session-id",
+  "address": {
+    "raw": "Via Roma 1, Milano",
+    "formatted": "1, Via Roma, ..."
+  },
+  "propertyPosition": {
+    "latitude": 45.523692,
+    "longitude": 9.330323,
+    "confirmed": true,
+    "source": "map_click"
+  },
+  "property": {
+    "type": "independent_house",
+    "ownership": "owner"
+  },
+  "consumption": {
+    "annualKwh": 6000,
+    "monthlyBillBand": "120_180"
+  },
+  "energyProfile": {
+    "heatPump": false,
+    "electricVehicle": false,
+    "induction": false,
+    "pool": false
+  }
+}
+```
+
+The boundary rejects technical requests containing `contact` or `marketing`. Contact/lead data belongs to the commercial flow and must not be silently mixed into the Property Intelligence request.
+
+## Position rule
+
+The PLUGIN-003 rule remains mandatory:
+
+```text
+GEOCODE = CANDIDATE POSITION
+PROPERTY_POSITION = RESOLVED POSITION
+```
+
+A request is accepted only when the property position has been explicitly confirmed and contains valid latitude/longitude values. The frontend never invents roof geometry.
+
+## Public result statuses
+
+PLUGIN-004 freezes the public status vocabulary that the future ATLAS transport may return:
+
+- `PREVIEW_AVAILABLE`
+- `MANUAL_FALLBACK`
+- `DISAMBIGUATION_REQUIRED`
+- `IDENTITY_NOT_RESOLVED`
+- `IDENTITY_AMBIGUOUS`
+- `RNDT_RECORD_NOT_FOUND`
+- `RNDT_RECORD_AMBIGUOUS`
+
+These are public integration states only. Internal AOS/gate/SHA/debug states must never leak into the public WordPress UX.
 
 ## Architecture
 
 - `atlas-solar-configurator.php` boots the plugin and defines version/constants.
-- `includes/class-plugin.php` wires assets, shortcode, REST geocoding and admin.
-- `includes/class-settings.php` owns configurable geocoder/tile-provider settings.
+- `includes/class-plugin.php` wires assets, shortcode, geocoding, ATLAS contract boundary and admin.
+- `includes/class-atlas-boundary.php` validates/normalizes the ATLAS public contract without network transport.
+- `includes/class-settings.php` owns configurable geocoder/tile-provider settings and status summary.
 - `includes/class-geocoder.php` is the same-origin WordPress geocoding proxy.
 - `includes/class-assets.php` registers Leaflet plus plugin CSS/JavaScript.
 - `includes/class-shortcode.php` renders the configurator.
@@ -39,108 +101,30 @@ The shortcode remains:
 - `public/js/configurator.js` contains the mini-SPA state/navigation/map engine.
 - `public/css/configurator.css` contains responsive, `asc-`-prefixed styles.
 
-## Location model
+## Existing public funnel
 
-PLUGIN-003 deliberately distinguishes a geocoding candidate from the confirmed property position.
+Version 0.4.0 keeps the already-certified PLUGIN-003 flow unchanged:
 
-Before confirmation:
+1. Address entry.
+2. Explicit geocoding.
+3. Zero/one/multiple candidate handling.
+4. Leaflet map.
+5. Marker adjustment by drag or map click.
+6. Explicit property-position confirmation.
+7. Property profile.
+8. Consumption and energy profile.
+9. Clearly labelled mock solar result.
+10. Contact and privacy capture followed by demo confirmation.
 
-```text
-address.confirmed = false
-address.latitude = null
-address.longitude = null
-location.propertyPosition.confirmed = false
-```
-
-The selected geocoder candidate or manually adjusted marker lives under `location.propertyPosition`.
-
-Only after the user presses **CONFERMA POSIZIONE E CONTINUA** are the final coordinates copied to the legacy-compatible `address.latitude` / `address.longitude` fields and `address.confirmed` becomes `true`.
-
-This implements the rule:
+Shortcode:
 
 ```text
-GEOCODE = CANDIDATE POSITION
-PROPERTY_POSITION = RESOLVED POSITION
+[atlas_solar_configurator]
 ```
-
-The frontend never invents roof geometry.
-
-## Geocoder
-
-The browser calls a same-origin WordPress REST endpoint:
-
-```text
-/wp-json/atlas-solar-configurator/v1/geocode?q=...
-```
-
-The WordPress proxy then calls a configurable Nominatim-compatible upstream.
-
-The default upstream is:
-
-```text
-https://nominatim.openstreetmap.org/search
-```
-
-The implementation is intentionally limited to explicit user searches:
-
-- no autocomplete;
-- maximum 5 candidates;
-- Italy scope (`countrycodes=it`);
-- identifying application User-Agent;
-- server-side transient caching;
-- upstream rate limiting;
-- no contact/lead data in the geocoder request.
-
-The endpoint can be changed from **WordPress > ATLAS Configurator** without a plugin update.
-
-The public Nominatim service is capacity-limited and subject to its current policy:
-https://operations.osmfoundation.org/policies/nominatim/
-
-For material commercial traffic, configure a dedicated Nominatim-compatible provider or self-hosted instance.
-
-## Map
-
-Leaflet 1.9.4 is loaded from the official documented CDN path and the map uses a configurable raster tile URL.
-
-Default tiles:
-
-```text
-https://tile.openstreetmap.org/{z}/{x}/{y}.png
-```
-
-Attribution is always shown. The tile URL and attribution can be changed from the WordPress admin page.
-
-The default OpenStreetMap tile service is best-effort and subject to:
-https://operations.osmfoundation.org/policies/tiles/
-
-For production traffic beyond moderate use, configure a dedicated commercial or self-hosted tile service.
-
-## State and persistence
-
-The configurator stores demo state in browser `localStorage`, including:
-
-- raw/formatted address;
-- geocoding state and candidates;
-- selected/adjusted property position;
-- explicit confirmation status;
-- property type and ownership;
-- consumption band and optional annual kWh;
-- energy profile;
-- mock solar result;
-- contact fields;
-- campaign attribution.
-
-Legacy PLUGIN-001/PLUGIN-002 state is migrated safely. A PLUGIN-002 session that had advanced without real geographic confirmation is returned to Step 1 after upgrade to 0.3.0.
-
-## Mock result
-
-The Step 4 result remains deliberately labelled **DEMO / STIMA DIMOSTRATIVA**. It is deterministic and based on the selected consumption band, with optional adjustment from annual kWh.
-
-It is still **not** a technical roof assessment.
 
 ## Boundaries
 
-Version 0.3.0 does **not** call:
+Version 0.4.0 still does **not** call:
 
 - ATLAS APIs;
 - ONE CLICK;
@@ -152,33 +136,13 @@ Version 0.3.0 does **not** call:
 - contract/signature systems;
 - external analytics providers.
 
-No lead is persisted to WordPress or transmitted to ATLAS. Contact information remains in browser demo state.
+No lead is persisted to WordPress or transmitted to ATLAS. Contact information remains in browser demo state. Only the address lookup goes to the configured geocoder and map tiles come from the configured tile provider.
 
-Only the address search is sent to the configured geocoder upstream. Map tiles are loaded from the configured tile provider.
+## Geocoder and map
 
-## Tracking foundation
+The geocoder remains a same-origin WordPress REST proxy backed by a configurable Nominatim-compatible endpoint. The default map remains Leaflet 1.9.4 with configurable raster tiles and attribution.
 
-Internal browser events now include:
-
-- `configurator_view`
-- `address_started`
-- `address_submitted`
-- `address_geocode_started`
-- `address_geocode_resolved`
-- `address_geocode_ambiguous`
-- `address_geocode_not_found`
-- `address_geocode_failed`
-- `address_candidate_selected`
-- `property_position_adjusted`
-- `property_position_confirmed`
-- `property_completed`
-- `consumption_completed`
-- `mock_result_viewed`
-- `lead_form_started`
-- `lead_demo_completed`
-- `configurator_reset`
-
-Campaign attribution preserves UTM parameters, `gclid`, `fbclid`, referrer and landing URL.
+For production traffic beyond moderate use, configure dedicated commercial or self-hosted geocoding/tile services rather than relying indefinitely on public best-effort OpenStreetMap infrastructure.
 
 ## Installation
 
@@ -187,13 +151,11 @@ Build a WordPress-compatible ZIP whose single root directory is `atlas-solar-con
 Then:
 
 1. WordPress > Plugins > Add New > Upload Plugin.
-2. Upload the 0.3.0 ZIP.
+2. Upload the 0.4.0 ZIP.
 3. Activate the plugin.
 4. Add `[atlas_solar_configurator]` to a page.
-5. Open **ATLAS Configurator** in WordPress admin to review provider settings.
+5. Open **ATLAS Configurator** in WordPress admin to review provider and boundary status.
 
 ## Next planned milestone
 
-PLUGIN-004 may introduce the public API boundary to ATLAS after property-position confirmation.
-
-That future boundary must remain separate from this plugin's map/geocoding responsibility and must not duplicate ATLAS business logic. ONE CLICK remains ATLAS-owned.
+PLUGIN-005 should add the real WordPress → ATLAS HTTPS transport only after the ATLAS-side public endpoint and authentication policy are defined and certified. ONE CLICK remains ATLAS-owned; WordPress must not duplicate roof, WFS/WCS, DSM, geometry or CRM business logic.

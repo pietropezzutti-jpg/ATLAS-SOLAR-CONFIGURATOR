@@ -96,7 +96,9 @@ final class Atlas_Solar_Configurator_Settings
         return [
             'Plugin version' => ASC_VERSION,
             'Mode' => 'Address + map confirmation demo',
+            'ATLAS public boundary' => 'Contract v1 ready; transport disabled',
             'ATLAS integration' => 'Disabled',
+            'ONE CLICK' => 'ATLAS-owned; not called by WordPress',
             'Geocoder' => 'Enabled through WordPress proxy',
             'Map tiles' => 'Enabled client-side',
             'Mock solar result' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',

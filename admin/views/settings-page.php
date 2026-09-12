@@ -28,11 +28,26 @@ $option_name = Atlas_Solar_Configurator_Settings::OPTION_KEY;
 
     <hr style="margin: 28px 0;" />
 
+    <h2><?php echo esc_html__('Boundary pubblico ATLAS', 'atlas-solar-configurator'); ?></h2>
+    <p style="max-width: 820px;">
+        <?php
+        echo esc_html__(
+            'PLUGIN-004 introduce il contratto pubblico v1 per la futura richiesta di assessment ad ATLAS dopo la conferma della posizione. In questa versione il trasporto verso ATLAS resta disabilitato: il plugin valida e normalizza il payload ma non esegue chiamate ad ATLAS, ONE CLICK, CRM o altri servizi interni.',
+            'atlas-solar-configurator'
+        );
+        ?>
+    </p>
+    <p style="max-width: 820px;">
+        <code>POST /wp-json/atlas-solar-configurator/v1/assessment-contract</code>
+    </p>
+
+    <hr style="margin: 28px 0;" />
+
     <h2><?php echo esc_html__('Provider localizzazione', 'atlas-solar-configurator'); ?></h2>
     <p style="max-width: 820px;">
         <?php
         echo esc_html__(
-            'PLUGIN-003 usa un proxy WordPress per la geocodifica e un provider tile configurabile per la mappa. I valori predefiniti usano servizi OpenStreetMap/Nominatim e possono essere sostituiti senza aggiornare il plugin.',
+            'La localizzazione usa un proxy WordPress per la geocodifica e un provider tile configurabile per la mappa. I valori predefiniti usano servizi OpenStreetMap/Nominatim e possono essere sostituiti senza aggiornare il plugin.',
             'atlas-solar-configurator'
         );
         ?>

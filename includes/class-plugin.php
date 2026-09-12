@@ -17,6 +17,7 @@ final class Atlas_Solar_Configurator_Plugin
     private Atlas_Solar_Configurator_Shortcode $shortcode;
     private Atlas_Solar_Configurator_Settings $settings;
     private Atlas_Solar_Configurator_Geocoder $geocoder;
+    private Atlas_Solar_Configurator_Atlas_Boundary $atlas_boundary;
 
     private function __construct()
     {
@@ -26,6 +27,7 @@ final class Atlas_Solar_Configurator_Plugin
         $this->assets = new Atlas_Solar_Configurator_Assets($session, $this->settings);
         $this->shortcode = new Atlas_Solar_Configurator_Shortcode($this->assets, $session);
         $this->geocoder = new Atlas_Solar_Configurator_Geocoder($this->settings);
+        $this->atlas_boundary = new Atlas_Solar_Configurator_Atlas_Boundary();
     }
 
     public static function instance(): self
@@ -41,6 +43,7 @@ final class Atlas_Solar_Configurator_Plugin
     {
         add_action('wp_enqueue_scripts', [$this->assets, 'register']);
         add_action('rest_api_init', [$this->geocoder, 'register_routes']);
+        add_action('rest_api_init', [$this->atlas_boundary, 'register_routes']);
         add_shortcode('atlas_solar_configurator', [$this->shortcode, 'render']);
 
         if (is_admin()) {
