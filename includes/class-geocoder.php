@@ -8,6 +8,14 @@
  * - globally rate-limited before upstream access;
  * - sent with an identifying User-Agent.
  *
+ * PLUGIN-005 geocoder recovery also performs one policy-compliant relaxed
+ * lookup when the exact civic-number query returns no candidates. The relaxed
+ * lookup removes a recognized trailing Italian province code and, when safe,
+ * the rightmost likely civic-number token. This lets the user land on the
+ * street/locality and then confirm or adjust the exact property position on
+ * the map instead of failing hard when the public geocoder lacks house-number
+ * coverage.
+ *
  * @package AtlasSolarConfigurator
  */
 
@@ -20,7 +28,24 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE_NAMESPACE = 'atlas-solar-configurator/v1';
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
+    private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
+    private const CACHE_STRATEGY_VERSION = '2';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
+    private const FALLBACK_DELAY_MICROSECONDS = 1100000;
+
+    private const PROVINCE_CODES = [
+        'AG', 'AL', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AT', 'AV', 'BA', 'BG', 'BI', 'BL', 'BN', 'BO', 'BR', 'BS', 'BT', 'BZ',
+        'CA', 'CB', 'CE', 'CH', 'CL', 'CN', 'CO', 'CR', 'CS', 'CT', 'CZ', 'EN', 'FC', 'FE', 'FG', 'FI', 'FM', 'FR', 'GE',
+        'GO', 'GR', 'IM', 'IS', 'KR', 'LC', 'LE', 'LI', 'LO', 'LT', 'LU', 'MB', 'MC', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT',
+        'NA', 'NO', 'NU', 'OR', 'PA', 'PC', 'PD', 'PE', 'PG', 'PI', 'PN', 'PO', 'PR', 'PT', 'PU', 'PV', 'PZ', 'RA', 'RC',
+        'RE', 'RG', 'RI', 'RM', 'RN', 'RO', 'SA', 'SI', 'SO', 'SP', 'SR', 'SS', 'SU', 'SV', 'TA', 'TE', 'TN', 'TO', 'TP',
+        'TR', 'TS', 'TV', 'UD', 'VA', 'VB', 'VC', 'VE', 'VI', 'VR', 'VT', 'VV',
+    ];
+
+    private const MONTH_WORDS = [
+        'gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno',
+        'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre',
+    ];
 
     private Atlas_Solar_Configurator_Settings $settings;
 
@@ -72,16 +97,22 @@ final class Atlas_Solar_Configurator_Geocoder
         $options = $this->settings->get_map_options();
         $endpoint = (string) $options['geocoder_endpoint'];
 
-        $cache_key = 'asc_geo_' . md5(strtolower($endpoint . '|' . $query));
+        $cache_key = 'asc_geo_v' . self::CACHE_STRATEGY_VERSION . '_' . md5(strtolower($endpoint . '|' . $query));
         $cached = get_transient($cache_key);
 
-        if (false !== $cached && is_array($cached)) {
+        if (false !== $cached && is_array($cached) && isset($cached['candidates'])) {
+            $cached_candidates = is_array($cached['candidates']) ? $cached['candidates'] : [];
+
             return $this->response(
                 [
-                    'status' => $this->status_from_candidates($cached),
+                    'status' => $this->status_from_candidates($cached_candidates),
                     'provider' => 'nominatim-compatible',
                     'cached' => true,
-                    'candidates' => $cached,
+                    'fallbackUsed' => !empty($cached['fallbackUsed']),
+                    'effectiveQuery' => isset($cached['effectiveQuery'])
+                        ? sanitize_text_field((string) $cached['effectiveQuery'])
+                        : $query,
+                    'candidates' => $cached_candidates,
                 ]
             );
         }
@@ -102,6 +133,61 @@ final class Atlas_Solar_Configurator_Geocoder
 
         set_transient(self::RATE_LIMIT_KEY, (string) $now, 2);
 
+        $exact = $this->lookup_candidates($endpoint, $query);
+        if (is_wp_error($exact)) {
+            return $exact;
+        }
+
+        $candidates = $exact;
+        $effective_query = $query;
+        $fallback_used = false;
+
+        if (0 === count($candidates)) {
+            $relaxed_query = $this->build_relaxed_query($query);
+
+            if ('' !== $relaxed_query && 0 !== strcasecmp($relaxed_query, $query)) {
+                usleep(self::FALLBACK_DELAY_MICROSECONDS);
+                set_transient(self::RATE_LIMIT_KEY, (string) microtime(true), 2);
+
+                $relaxed = $this->lookup_candidates($endpoint, $relaxed_query);
+                if (is_wp_error($relaxed)) {
+                    return $relaxed;
+                }
+
+                if (count($relaxed) > 0) {
+                    $candidates = $relaxed;
+                    $effective_query = $relaxed_query;
+                    $fallback_used = true;
+                }
+            }
+        }
+
+        $cache_payload = [
+            'candidates' => $candidates,
+            'fallbackUsed' => $fallback_used,
+            'effectiveQuery' => $effective_query,
+        ];
+
+        set_transient(
+            $cache_key,
+            $cache_payload,
+            count($candidates) > 0 ? self::CACHE_TTL : self::NEGATIVE_CACHE_TTL
+        );
+
+        return $this->response(
+            [
+                'status' => $this->status_from_candidates($candidates),
+                'provider' => 'nominatim-compatible',
+                'cached' => false,
+                'fallbackUsed' => $fallback_used,
+                'effectiveQuery' => $effective_query,
+                'candidates' => $candidates,
+            ]
+        );
+    }
+
+    private function lookup_candidates(string $endpoint, string $query)
+    {
         $url = add_query_arg(
             [
                 'format' => 'jsonv2',
@@ -201,16 +287,53 @@ final class Atlas_Solar_Configurator_Geocoder
             ];
         }
 
-        set_transient($cache_key, $candidates, self::CACHE_TTL);
+        return $candidates;
+    }
 
-        return $this->response(
-            [
-                'status' => $this->status_from_candidates($candidates),
-                'provider' => 'nominatim-compatible',
-                'cached' => false,
-                'candidates' => $candidates,
-            ]
-        );
+    private function build_relaxed_query(string $query): string
+    {
+        $normalized = preg_replace('/\s+/u', ' ', trim($query));
+        if (!is_string($normalized) || '' === $normalized) {
+            return '';
+        }
+
+        $tokens = preg_split('/\s+/u', $normalized);
+        if (!is_array($tokens) || count($tokens) < 2) {
+            return $normalized;
+        }
+
+        $last_index = count($tokens) - 1;
+        $last_token = strtoupper(trim((string) $tokens[$last_index], " \t\n\r\0\x0B,.;"));
+
+        if (in_array($last_token, self::PROVINCE_CODES, true)) {
+            array_pop($tokens);
+        }
+
+        for ($index = count($tokens) - 1; $index >= 0; --$index) {
+            $token = trim((string) $tokens[$index], " \t\n\r\0\x0B,.;");
+
+            if (!preg_match('/^\d{1,4}[a-zA-Z]?(?:[\/-][a-zA-Z0-9]+)?$/', $token)) {
+                continue;
+            }
+
+            $next = isset($tokens[$index + 1])
+                ? strtolower(trim((string) $tokens[$index + 1], " \t\n\r\0\x0B,.;"))
+                : '';
+
+            if (in_array($next, self::MONTH_WORDS, true)) {
+                continue;
+            }
+
+            $words_after = count($tokens) - $index - 1;
+            if ($index >= 2 && $words_after >= 1) {
+                array_splice($tokens, $index, 1);
+                break;
+            }
+        }
+
+        $relaxed = trim(preg_replace('/\s+/u', ' ', implode(' ', $tokens)) ?? '');
+
+        return $relaxed;
     }
 
     private function status_from_candidates(array $candidates): string
