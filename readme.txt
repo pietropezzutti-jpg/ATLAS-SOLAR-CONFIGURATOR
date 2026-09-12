@@ -14,7 +14,7 @@ Public WordPress solar lead configurator with explicit property-position confirm
 
 ATLAS Solar Lead Configurator provides a public WordPress funnel for address resolution, property-position confirmation, property qualification, consumption profiling, a clearly labelled mock solar result and demo contact capture.
 
-Version 0.5.0 adds the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R0 release, so normal browser use still does not call ATLAS.
+Version 0.5.0 adds the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R1 acceptance phase, so normal browser use still does not call ATLAS.
 
 Shortcode:
 
@@ -36,7 +36,11 @@ The public boundary still returns BOUNDARY_READY with transmitted=false and atla
 
 Public result statuses are PREVIEW_AVAILABLE, MANUAL_FALLBACK, DISAMBIGUATION_REQUIRED, IDENTITY_NOT_RESOLVED, IDENTITY_AMBIGUOUS, RNDT_RECORD_NOT_FOUND and RNDT_RECORD_AMBIGUOUS.
 
-The default geocoder is accessed through a same-origin WordPress REST proxy and is Nominatim-compatible. The default map uses Leaflet with OpenStreetMap tiles. Provider endpoints are configurable in WordPress admin.
+The primary geocoder is accessed through a same-origin WordPress REST proxy and is Nominatim-compatible. If both free-form and structured Nominatim lookup fail for an Italian civic address, the server may perform an exact fallback against ANNCSU-derived open data. The default fallback endpoint is the community-operated mirror at developers.coseerobe.it/api/v1/anncsu-indirizzi-slim; it is not an official Agenzia delle Entrate API. It can be overridden with ASC_ANNCSU_ADDRESS_API_URL or disabled by defining that constant as an empty string.
+
+The ANNCSU fallback accepts only records that match municipality, street and civic, include valid coordinates and are not flagged out_of_bounds. It never replaces an unresolved address with a municipality or street centroid. Any candidate must still be confirmed by the user on the map before propertyPosition becomes valid.
+
+The default map uses Leaflet with OpenStreetMap tiles. Primary map/geocoder provider endpoints remain configurable in WordPress admin.
 
 == Installation ==
 
@@ -44,7 +48,8 @@ The default geocoder is accessed through a same-origin WordPress REST proxy and 
 2. Activate the plugin.
 3. Add [atlas_solar_configurator] to a WordPress page.
 4. Review map/geocoder and ATLAS integration status under ATLAS Configurator.
-5. Configure ATLAS base URL/bearer token only in server-side deployment configuration when preparing a later live-transport gate.
+5. Optionally set ASC_ANNCSU_ADDRESS_API_URL server-side to override or disable the community ANNCSU open-data mirror.
+6. Configure ATLAS base URL/bearer token only in server-side deployment configuration when preparing a later live-transport gate.
 
 == Frequently Asked Questions ==
 
@@ -74,13 +79,17 @@ No. WordPress confirms the property position only. Roof geometry and Property In
 
 = Can I change map/geocoder providers? =
 
-Yes. The geocoder endpoint, tile URL and tile attribution are configurable from the ATLAS Configurator admin page.
+Yes. The primary geocoder endpoint, tile URL and tile attribution are configurable from the ATLAS Configurator admin page. The exact-civic ANNCSU fallback endpoint is server-side only and can be overridden with ASC_ANNCSU_ADDRESS_API_URL.
+
+= Is the default ANNCSU fallback endpoint official? =
+
+No. It is a community-operated REST mirror over ANNCSU open data. The adapter is deliberately configurable so a controlled or official source can replace it without changing frontend behavior.
 
 == Changelog ==
 
 = 0.5.0 =
 
-* Add PLUGIN-005 server-side ATLAS transport adapter foundation.
+* Add PLUGIN-005 server-side ATLAS transport adapter foundation and R1 acceptance harness.
 * Implement exact RoofClickPreviewRequest mapping: latitude + longitude only.
 * Target POST /property-intelligence/roof/click-preview.
 * Add server-side HTTP Bearer authentication support.
@@ -90,6 +99,11 @@ Yes. The geocoder endpoint, tile URL and tile attribution are configurable from 
 * Validate returned ATLAS status against the PLUGIN-004 public vocabulary.
 * Keep the public /assessment-contract boundary disconnected and transmitted=false.
 * Keep bearer credentials out of frontend state/configuration.
+* Remove municipality-centre substitution from address resolution.
+* Add exact structured Nominatim retry for unresolved civic addresses.
+* Add strict server-side ANNCSU open-data exact-civic fallback with configurable community mirror.
+* Reject ANNCSU records with wrong municipality/street/civic, missing coordinates or out_of_bounds=true.
+* Keep property coordinates unconfirmed until explicit map confirmation.
 
 = 0.4.0 =
 

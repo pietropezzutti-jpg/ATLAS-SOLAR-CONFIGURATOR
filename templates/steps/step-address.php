@@ -70,7 +70,7 @@ if (!defined('ABSPATH')) {
         <p class="asc-map-attribution">
             Mappa e dati geografici:
             <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a>.
-            Ricerca indirizzi tramite servizio Nominatim-compatible.
+            Ricerca primaria tramite servizio Nominatim-compatible; per civici non risolti può essere usato un fallback server-side su dati open data ANNCSU tramite mirror community configurabile. La posizione dell'immobile diventa valida solo dopo la conferma sulla mappa.
         </p>
     </div>
 </div>
