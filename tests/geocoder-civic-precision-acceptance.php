@@ -184,6 +184,19 @@ $filter = static function ($preempt, $args, $url) {
     if (false !== strpos($url, 'anncsu-indirizzi-slim')) {
         $civic = (string) ($params['CIVICO'] ?? '');
 
+        if ('eq.23' === $civic) {
+            return [
+                'headers' => [],
+                'body' => wp_json_encode(['error' => 'synthetic unavailable']),
+                'response' => [
+                    'code' => 503,
+                    'message' => 'Service Unavailable',
+                ],
+                'cookies' => [],
+                'filename' => null,
+            ];
+        }
+
         $records = 'eq.19' === $civic
             ? [[
                 'PROGRESSIVO_ACCESSO' => 'synthetic-access-19',
@@ -230,7 +243,7 @@ $run_fallback = static function (
     );
 
     delete_transient(
-        'asc_geo_v6_' .
+        'asc_geo_v7_' .
         md5(strtolower($endpoint . '|' . $query))
     );
 
@@ -252,7 +265,7 @@ $run_smart = static function (
     );
 
     delete_transient(
-        'asc_geo_v6_' .
+        'asc_geo_v7_' .
         md5(strtolower($endpoint . '|' . $query))
     );
 
@@ -346,6 +359,30 @@ asc_r5_assert(
 );
 
 /*
+ * Exact civic unavailable and secondary ANNCSU provider unavailable:
+ * street-level evidence may center the map but must not become a property
+ * candidate. The browser must require an explicit map click.
+ */
+$response23 = $run_fallback(
+    'Via Esempio 23 Comune Test'
+);
+
+$data23 = $response23->get_data();
+
+asc_r5_assert(
+    'not_found' === ($data23['status'] ?? null)
+        && 0 === count($data23['candidates'] ?? []),
+    'R6_MANUAL_MAP_DOES_NOT_PROMOTE_STREET_TO_PROPERTY'
+);
+
+asc_r5_assert(
+    'manual_map' === ($data23['fallbackMode'] ?? null)
+        && is_array($data23['manualFallback'] ?? null)
+        && true === ($data23['manualFallback']['referenceOnly'] ?? null),
+    'R6_ANNCSU_ERROR_DEGRADES_TO_MANUAL_MAP'
+);
+
+/*
  * Geoapify building-like candidate without housenumber
  * cannot satisfy civic 20; exact fallback must win.
  */
@@ -402,5 +439,9 @@ fwrite(
 );
 fwrite(
     STDOUT,
-    "FINAL=PASS_PUBLIC_CONFIGURATOR_R5_CIVIC_PRECISION_ACCEPTANCE\n"
+    "KEYLESS_MANUAL_MAP_FALLBACK=True\n"
+);
+fwrite(
+    STDOUT,
+    "FINAL=PASS_PUBLIC_CONFIGURATOR_R6_KEYLESS_MANUAL_MAP_ACCEPTANCE\n"
 );

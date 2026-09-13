@@ -122,7 +122,7 @@ foreach ($token in @(
     'countrycodes',
     'user-agent',
     'nominatim-compatible',
-    "CACHE_STRATEGY_VERSION = '6'",
+    "CACHE_STRATEGY_VERSION = '7'",
     'build_structured_address',
     'lookup_structured_candidates',
     "'street' => `$street",
@@ -137,6 +137,9 @@ foreach ($token in @(
     "'NOME_COMUNE' => 'ilike.*'",
     "'CIVICO' => 'eq.'",
     'anncsu_exact',
+    'manualFallback',
+    'manual_map',
+    'referenceOnly',
     'out_of_bounds'
 )) {
     if (-not $geocoder.Contains($token)) {
@@ -242,9 +245,12 @@ foreach ($token in @(
     'R5_STREET_WITHOUT_CIVIC_PRESERVED',
     'R5_CIVIC_WITHOUT_CITY_STREET_ONLY_REJECTED',
     'R5_GEOAPIFY_MISSING_CIVIC_NOT_PROMOTED',
+    'R6_MANUAL_MAP_DOES_NOT_PROMOTE_STREET_TO_PROPERTY',
+    'R6_ANNCSU_ERROR_DEGRADES_TO_MANUAL_MAP',
     'REAL_LOCATION_FIXTURE=False',
     'CIVIC_STREET_PROMOTION_ALLOWED=False',
-    'FINAL=PASS_PUBLIC_CONFIGURATOR_R5_CIVIC_PRECISION_ACCEPTANCE'
+    'KEYLESS_MANUAL_MAP_FALLBACK=True',
+    'FINAL=PASS_PUBLIC_CONFIGURATOR_R6_KEYLESS_MANUAL_MAP_ACCEPTANCE'
 )) {
     if (-not $civicPrecisionAcceptance.Contains($token)) {
         throw "Missing R5 civic precision acceptance token: $token"
@@ -288,6 +294,7 @@ foreach ($eventName in @(
     'address_geocode_resolved',
     'address_geocode_ambiguous',
     'address_geocode_not_found',
+    'address_geocode_manual_fallback',
     'property_position_adjusted',
     'property_position_confirmed',
     'property_completed',

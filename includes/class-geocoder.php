@@ -27,7 +27,7 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
     private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
-    private const CACHE_STRATEGY_VERSION = '6';
+    private const CACHE_STRATEGY_VERSION = '7';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
     private const FALLBACK_DELAY_MICROSECONDS = 1100000;
 
@@ -124,6 +124,10 @@ final class Atlas_Solar_Configurator_Geocoder
                     'effectiveQuery' => isset($cached['effectiveQuery'])
                         ? sanitize_text_field((string) $cached['effectiveQuery'])
                         : $query,
+                    'manualFallback' => isset($cached['manualFallback'])
+                        && is_array($cached['manualFallback'])
+                            ? $cached['manualFallback']
+                            : null,
                     'candidates' => $cached_candidates,
                 ]
             );
@@ -165,6 +169,7 @@ final class Atlas_Solar_Configurator_Geocoder
         $fallback_used = false;
         $fallback_attempted = false;
         $fallback_mode = 'none';
+        $manual_fallback = null;
 
         if (0 === count($candidates) && null !== $structured) {
             $fallback_attempted = true;
@@ -204,11 +209,10 @@ final class Atlas_Solar_Configurator_Geocoder
                     $structured
                 );
 
-                if (is_wp_error($anncsu_candidates)) {
-                    return $anncsu_candidates;
-                }
-
-                if (count($anncsu_candidates) > 0) {
+                if (
+                    !is_wp_error($anncsu_candidates)
+                    && count($anncsu_candidates) > 0
+                ) {
                     $candidates = $anncsu_candidates;
                     $provider = self::ANNCSU_PROVIDER;
                     $effective_query = $structured['street_name'] . ' ' . $structured['civic'] . ', ' . $structured['city'];
@@ -218,9 +222,39 @@ final class Atlas_Solar_Configurator_Geocoder
             }
         }
 
+        /*
+         * Exact civic evidence is unavailable.
+         *
+         * A street-level result may now be used only as a map reference.
+         * It is deliberately kept out of candidates so that it can never
+         * become a confirmed property position without an explicit map click.
+         */
+        if (0 === count($candidates) && null !== $structured) {
+            $fallback_attempted = true;
+            $this->wait_before_fallback();
+
+            $street_reference_candidates = $this->lookup_structured_candidates(
+                $endpoint,
+                $structured['street_name'],
+                $structured['city']
+            );
+
+            if (
+                !is_wp_error($street_reference_candidates)
+                && count($street_reference_candidates) > 0
+            ) {
+                $manual_fallback = $street_reference_candidates[0];
+                $manual_fallback['referenceOnly'] = true;
+                $effective_query = $structured['street_name'] . ', ' . $structured['city'];
+                $fallback_used = true;
+                $fallback_mode = 'manual_map';
+            }
+        }
+
         $cache_payload = [
             'provider' => $provider,
             'candidates' => $candidates,
+            'manualFallback' => $manual_fallback,
             'fallbackUsed' => $fallback_used,
             'fallbackAttempted' => $fallback_attempted,
             'fallbackMode' => $fallback_mode,
@@ -242,6 +276,7 @@ final class Atlas_Solar_Configurator_Geocoder
                 'fallbackAttempted' => $fallback_attempted,
                 'fallbackMode' => $fallback_mode,
                 'effectiveQuery' => $effective_query,
+                'manualFallback' => $manual_fallback,
                 'candidates' => $candidates,
             ]
         );

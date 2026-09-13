@@ -12,6 +12,7 @@
         provider: null,
         query: '',
         candidates: [],
+        manualReference: null,
         selectedCandidateIndex: null,
         propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
     });
@@ -85,6 +86,7 @@
         if (loc.selectedCandidateIndex !== null && !Number.isInteger(loc.selectedCandidateIndex)) {
             loc.selectedCandidateIndex = null;
         }
+        loc.manualReference = normalizeCandidate(loc.manualReference);
         const pos = loc.propertyPosition || {};
         loc.propertyPosition = {
             latitude: finite(pos.latitude) ? Number(pos.latitude) : null,
@@ -380,6 +382,26 @@
         if (map) { map.setView([Number(center[0]), Number(center[1])], Number(mapConfig.defaultZoom) || 5); }
     }
 
+    function showManualReference(candidate) {
+        if (!candidate || !ensureMap()) { return false; }
+
+        const lat = latitude(candidate.latitude);
+        const lon = longitude(candidate.longitude);
+        if (lat === null || lon === null) { return false; }
+
+        if (marker && map) {
+            map.removeLayer(marker);
+            marker = null;
+        }
+
+        const propertyZoom = Number(mapConfig.propertyZoom) || 19;
+        const referenceZoom = Math.max(15, propertyZoom - 2);
+
+        map.setView([lat, lon], referenceZoom, { animate: false });
+        setTimeout(() => map.invalidateSize(), 0);
+        return true;
+    }
+
     function coords(lat, lon) { return Number(lat).toFixed(6) + ', ' + Number(lon).toFixed(6); }
 
     function renderCandidates() {
@@ -410,6 +432,7 @@
             ambiguous: 'Ho trovato più posizioni compatibili con l’indirizzo.',
             resolved: 'Controlla il punto sulla mappa prima di continuare.',
             candidate_selected: 'Controlla il punto sulla mappa prima di continuare.',
+            manual_position_required: 'Il civico non è localizzato con precisione. Individua il tetto sulla mappa e fai clic sulla posizione corretta.',
             confirmed: 'Posizione dell’immobile confermata.',
             not_found: 'Non ho trovato una posizione affidabile. Verifica indirizzo, numero civico e comune.',
             error: 'Non riesco a localizzare l’indirizzo in questo momento. Riprova tra poco.'
@@ -428,12 +451,29 @@
         if (!panel || !status || !mapWrap || !summary || !address || !coordinateNode || !confirm) { return; }
 
         const candidates = state.location.candidates || [];
+        const manualReference = state.location.manualReference || null;
         const pos = state.location.propertyPosition || {};
         const hasPosition = finite(pos.latitude) && finite(pos.longitude);
-        panel.hidden = state.location.status === 'idle' && !candidates.length && !hasPosition;
+        panel.hidden = state.location.status === 'idle'
+            && !candidates.length
+            && !manualReference
+            && !hasPosition;
         status.textContent = statusMessage();
         status.setAttribute('data-status', state.location.status || 'idle');
         renderCandidates();
+
+        if (!hasPosition && manualReference) {
+            mapWrap.hidden = false;
+            summary.hidden = true;
+            confirm.disabled = true;
+
+            if (!showManualReference(manualReference)) {
+                mapWrap.hidden = true;
+                status.textContent = 'La mappa non è disponibile. Ricarica la pagina e riprova.';
+                status.setAttribute('data-status', 'error');
+            }
+            return;
+        }
 
         if (!hasPosition) {
             mapWrap.hidden = true;
@@ -548,6 +588,7 @@
                 provider: state.location.provider || 'nominatim-compatible',
                 query: state.location.query || state.address.raw,
                 candidates,
+                manualReference: null,
                 selectedCandidateIndex: index,
                 propertyPosition: {
                     latitude: candidate.latitude,
@@ -589,6 +630,7 @@
                 provider: state.location.provider,
                 query: state.location.query,
                 candidates: state.location.candidates,
+                manualReference: null,
                 selectedCandidateIndex: state.location.selectedCandidateIndex,
                 propertyPosition: {
                     latitude: lat,
@@ -622,6 +664,7 @@
                 provider: state.location.provider,
                 query: state.location.query,
                 candidates: state.location.candidates,
+                manualReference: null,
                 selectedCandidateIndex: state.location.selectedCandidateIndex,
                 propertyPosition: {
                     latitude: lat,
@@ -661,6 +704,7 @@
                 provider: null,
                 query: rawAddress,
                 candidates: [],
+                manualReference: null,
                 selectedCandidateIndex: null,
                 propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
             },
@@ -690,20 +734,37 @@
             const candidates = Array.isArray(payload && payload.candidates)
                 ? payload.candidates.map(normalizeCandidate).filter(Boolean)
                 : [];
+            const manualReference = normalizeCandidate(payload && payload.manualFallback);
             const provider = payload && payload.provider ? String(payload.provider) : 'nominatim-compatible';
 
             if (!candidates.length) {
-                setState({
-                    location: {
-                        status: 'not_found',
-                        provider,
-                        query: rawAddress,
-                        candidates: [],
-                        selectedCandidateIndex: null,
-                        propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
-                    }
-                });
-                trackEvent('address_geocode_not_found');
+                if (manualReference) {
+                    setState({
+                        location: {
+                            status: 'manual_position_required',
+                            provider,
+                            query: rawAddress,
+                            candidates: [],
+                            manualReference,
+                            selectedCandidateIndex: null,
+                            propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
+                        }
+                    });
+                    trackEvent('address_geocode_manual_fallback');
+                } else {
+                    setState({
+                        location: {
+                            status: 'not_found',
+                            provider,
+                            query: rawAddress,
+                            candidates: [],
+                            manualReference: null,
+                            selectedCandidateIndex: null,
+                            propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
+                        }
+                    });
+                    trackEvent('address_geocode_not_found');
+                }
                 renderLocation();
                 return;
             }
@@ -714,6 +775,7 @@
                     provider,
                     query: rawAddress,
                     candidates,
+                    manualReference: null,
                     selectedCandidateIndex: null,
                     propertyPosition: { latitude: null, longitude: null, confirmed: false, source: null }
                 }
