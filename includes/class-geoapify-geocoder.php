@@ -96,7 +96,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             return $this->fallback->geocode($request);
         }
 
-        $cache_key = 'asc_geoapify_v6_' . md5(strtolower($query));
+        $cache_key = 'asc_geoapify_v7_' . md5(strtolower($query));
         $cached = get_transient($cache_key);
         if (false !== $cached && is_array($cached) && isset($cached['candidates'])) {
             $cached_candidates = is_array($cached['candidates']) ? $cached['candidates'] : [];
@@ -171,6 +171,9 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
                 'confidence' => isset($rank['confidence']) && is_numeric($rank['confidence']) ? (float) $rank['confidence'] : null,
                 'confidenceBuildingLevel' => isset($rank['confidence_building_level']) && is_numeric($rank['confidence_building_level']) ? (float) $rank['confidence_building_level'] : null,
                 'matchType' => isset($rank['match_type']) ? sanitize_key((string) $rank['match_type']) : '',
+                'houseNumber' => isset($item['housenumber'])
+                    ? sanitize_text_field((string) $item['housenumber'])
+                    : '',
                 'buildingSnap' => [
                     'eligible' => false,
                     'attempted' => false,
@@ -210,6 +213,31 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
 
     private function quality_filter_candidates(array $candidates, string $query): array
     {
+        $civic = method_exists($this->fallback, 'exact_civic_for_query')
+            ? $this->fallback->exact_civic_for_query($query)
+            : '';
+
+        if ('' !== $civic) {
+            $candidates = array_values(
+                array_filter(
+                    $candidates,
+                    function (array $candidate) use ($civic): bool {
+                        $house_number = isset($candidate['houseNumber'])
+                            ? trim((string) $candidate['houseNumber'])
+                            : '';
+
+                        return '' !== $house_number
+                            && $this->same_civic($house_number, $civic)
+                            && $this->candidate_is_reliable_address($candidate);
+                    }
+                )
+            );
+
+            if (0 === count($candidates)) {
+                return [];
+            }
+        }
+
         $has_reliable_address = false;
         foreach ($candidates as $candidate) {
             if ($this->candidate_is_reliable_address($candidate)) {
@@ -325,6 +353,21 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             is_numeric($building_confidence)
             && (float) $building_confidence >= 0.50
         ) || in_array($match_type, ['full_match', 'match_by_building'], true);
+    }
+
+    private function same_civic(string $left, string $right): bool
+    {
+        $normalize = static function (string $value): string {
+            $normalized = strtoupper(remove_accents(trim($value)));
+
+            return preg_replace('/[^A-Z0-9]+/', '', $normalized) ?? '';
+        };
+
+        $left_normalized = $normalize($left);
+        $right_normalized = $normalize($right);
+
+        return '' !== $left_normalized
+            && $left_normalized === $right_normalized;
     }
 
     private function deduplicate_candidates(array $candidates): array

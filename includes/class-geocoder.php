@@ -27,7 +27,7 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
     private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
-    private const CACHE_STRATEGY_VERSION = '5';
+    private const CACHE_STRATEGY_VERSION = '6';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
     private const FALLBACK_DELAY_MICROSECONDS = 1100000;
 
@@ -146,40 +146,50 @@ final class Atlas_Solar_Configurator_Geocoder
         set_transient(self::RATE_LIMIT_KEY, (string) $now, 2);
 
         $provider = 'nominatim-compatible';
+        $structured = $this->build_structured_address($query);
+        $requested_civic = $this->exact_civic_for_query($query);
+
         $candidates = $this->lookup_free_form_candidates($endpoint, $query);
         if (is_wp_error($candidates)) {
             return $candidates;
+        }
+
+        if ('' !== $requested_civic) {
+            $candidates = $this->filter_exact_civic_candidates(
+                $candidates,
+                $requested_civic
+            );
         }
 
         $effective_query = $query;
         $fallback_used = false;
         $fallback_attempted = false;
         $fallback_mode = 'none';
-        $structured = null;
 
-        if (0 === count($candidates)) {
-            $structured = $this->build_structured_address($query);
+        if (0 === count($candidates) && null !== $structured) {
+            $fallback_attempted = true;
+            $this->wait_before_fallback();
 
-            if (null !== $structured) {
-                $fallback_attempted = true;
-                $this->wait_before_fallback();
+            $structured_candidates = $this->lookup_structured_candidates(
+                $endpoint,
+                $structured['street'],
+                $structured['city']
+            );
 
-                $structured_candidates = $this->lookup_structured_candidates(
-                    $endpoint,
-                    $structured['street'],
-                    $structured['city']
-                );
+            if (is_wp_error($structured_candidates)) {
+                return $structured_candidates;
+            }
 
-                if (is_wp_error($structured_candidates)) {
-                    return $structured_candidates;
-                }
+            $structured_candidates = $this->filter_exact_civic_candidates(
+                $structured_candidates,
+                $structured['civic']
+            );
 
-                if (count($structured_candidates) > 0) {
-                    $candidates = $structured_candidates;
-                    $effective_query = $structured['street'] . ', ' . $structured['city'];
-                    $fallback_used = true;
-                    $fallback_mode = 'structured_exact';
-                }
+            if (count($structured_candidates) > 0) {
+                $candidates = $structured_candidates;
+                $effective_query = $structured['street'] . ', ' . $structured['city'];
+                $fallback_used = true;
+                $fallback_mode = 'structured_exact';
             }
         }
 
@@ -284,7 +294,10 @@ final class Atlas_Solar_Configurator_Geocoder
         }
 
         $options = $this->settings->get_map_options();
-        $endpoint = isset($options['geocoder_endpoint']) ? trim((string) $options['geocoder_endpoint']) : '';
+        $endpoint = isset($options['geocoder_endpoint'])
+            ? trim((string) $options['geocoder_endpoint'])
+            : '';
+
         if ('' === $endpoint) {
             return [];
         }
@@ -295,7 +308,42 @@ final class Atlas_Solar_Configurator_Geocoder
             $structured['city']
         );
 
-        return is_array($candidates) ? $candidates : [];
+        if (!is_array($candidates)) {
+            return [];
+        }
+
+        return $this->filter_exact_civic_candidates(
+            $candidates,
+            $structured['civic']
+        );
+    }
+
+    /**
+     * Return a civic detectable from the query even if municipality
+     * information is insufficient for structured lookup.
+     */
+    public function exact_civic_for_query(string $query): string
+    {
+        $tokens = $this->normalized_address_tokens($query);
+        if (count($tokens) < 3) {
+            return '';
+        }
+
+        $this->remove_trailing_province_code($tokens);
+
+        $civic_index = $this->find_likely_civic_index(
+            $tokens,
+            false
+        );
+
+        if (null === $civic_index) {
+            return '';
+        }
+
+        return trim(
+            (string) $tokens[$civic_index],
+            " \t\n\r\0\x0B,.;"
+        );
     }
 
     private function lookup_free_form_candidates(string $endpoint, string $query)
@@ -404,6 +452,10 @@ final class Atlas_Solar_Configurator_Geocoder
                 continue;
             }
 
+            $address = isset($item['address']) && is_array($item['address'])
+                ? $item['address']
+                : [];
+
             $candidates[] = [
                 'id' => isset($item['place_id']) ? (string) $item['place_id'] : '',
                 'displayName' => sanitize_text_field((string) $item['display_name']),
@@ -411,10 +463,35 @@ final class Atlas_Solar_Configurator_Geocoder
                 'longitude' => (float) $longitude,
                 'type' => isset($item['type']) ? sanitize_key((string) $item['type']) : '',
                 'category' => isset($item['category']) ? sanitize_key((string) $item['category']) : '',
+                'houseNumber' => isset($address['house_number'])
+                    ? sanitize_text_field((string) $address['house_number'])
+                    : '',
             ];
         }
 
         return $candidates;
+    }
+
+    private function filter_exact_civic_candidates(array $candidates, string $civic): array
+    {
+        return array_values(
+            array_filter(
+                $candidates,
+                function (array $candidate) use ($civic): bool {
+                    return $this->candidate_has_exact_civic($candidate, $civic);
+                }
+            )
+        );
+    }
+
+    private function candidate_has_exact_civic(array $candidate, string $civic): bool
+    {
+        $house_number = isset($candidate['houseNumber'])
+            ? trim((string) $candidate['houseNumber'])
+            : '';
+
+        return '' !== $house_number
+            && $this->same_civic($house_number, $civic);
     }
 
     private function lookup_anncsu_exact_candidates(string $endpoint, array $structured)
@@ -592,7 +669,7 @@ final class Atlas_Solar_Configurator_Geocoder
         $city_tokens = array_slice($tokens, $civic_index + 1);
 
         while (
-            count($city_tokens) > 1
+            count($city_tokens) > 0
             && preg_match('/^\d{5}$/', trim((string) $city_tokens[0], " \t\n\r\0\x0B,.;"))
         ) {
             array_shift($city_tokens);
@@ -639,17 +716,30 @@ final class Atlas_Solar_Configurator_Geocoder
         }
     }
 
-    private function find_likely_civic_index(array $tokens): ?int
-    {
+    private function find_likely_civic_index(
+        array $tokens,
+        bool $require_city_after = true
+    ): ?int {
         for ($index = count($tokens) - 1; $index >= 0; --$index) {
-            $token = trim((string) $tokens[$index], " \t\n\r\0\x0B,.;");
+            $token = trim(
+                (string) $tokens[$index],
+                " \t\n\r\0\x0B,.;"
+            );
 
-            if (!preg_match('/^\d{1,4}[a-zA-Z]?(?:[\/-][a-zA-Z0-9]+)?$/', $token)) {
+            if (!preg_match(
+                '/^\d{1,4}[a-zA-Z]?(?:[\/-][a-zA-Z0-9]+)?$/',
+                $token
+            )) {
                 continue;
             }
 
             $next = isset($tokens[$index + 1])
-                ? strtolower(trim((string) $tokens[$index + 1], " \t\n\r\0\x0B,.;"))
+                ? strtolower(
+                    trim(
+                        (string) $tokens[$index + 1],
+                        " \t\n\r\0\x0B,.;"
+                    )
+                )
                 : '';
 
             if (in_array($next, self::MONTH_WORDS, true)) {
@@ -657,7 +747,11 @@ final class Atlas_Solar_Configurator_Geocoder
             }
 
             $words_after = count($tokens) - $index - 1;
-            if ($index >= 2 && $words_after >= 1) {
+
+            if (
+                $index >= 2
+                && (!$require_city_after || $words_after >= 1)
+            ) {
                 return $index;
             }
         }
@@ -728,7 +822,9 @@ final class Atlas_Solar_Configurator_Geocoder
     private function same_civic(string $left, string $right): bool
     {
         $normalize = static function (string $value): string {
-            return strtoupper(preg_replace('/\s+/', '', trim($value)) ?? '');
+            $normalized = strtoupper(remove_accents(trim($value)));
+
+            return preg_replace('/[^A-Z0-9]+/', '', $normalized) ?? '';
         };
 
         $left_normalized = $normalize($left);

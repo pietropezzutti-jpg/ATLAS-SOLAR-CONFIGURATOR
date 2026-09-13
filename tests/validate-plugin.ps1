@@ -1,5 +1,6 @@
 param(
-    [string] $PluginRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+    [string] $PluginRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path,
+    [switch] $PackageMode
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,11 +27,16 @@ $required = @(
     'templates/steps/step-address.php',
     'tests/atlas-transport-acceptance.php',
     'tests/geocoder-anncsu-acceptance.php',
+    'tests/geocoder-civic-precision-acceptance.php',
     'tests/validate-plugin.ps1'
 )
 
 $missing = @()
 foreach ($relative in $required) {
+    if ($PackageMode -and $relative -eq '.gitignore') {
+        continue
+    }
+
     $path = Join-Path $PluginRoot $relative
     if (-not (Test-Path -LiteralPath $path)) {
         $missing += $relative
@@ -116,7 +122,7 @@ foreach ($token in @(
     'countrycodes',
     'user-agent',
     'nominatim-compatible',
-    "CACHE_STRATEGY_VERSION = '5'",
+    "CACHE_STRATEGY_VERSION = '6'",
     'build_structured_address',
     'lookup_structured_candidates',
     "'street' => `$street",
@@ -226,6 +232,22 @@ foreach ($token in @(
 )) {
     if (-not $geocoderAcceptance.Contains($token)) {
         throw "Missing ANNCSU acceptance token: $token"
+    }
+}
+
+$civicPrecisionAcceptance = Get-Content -LiteralPath (Join-Path $PluginRoot 'tests/geocoder-civic-precision-acceptance.php') -Raw
+foreach ($token in @(
+    'R5_STRUCTURED_EXACT_RESOLVED',
+    'R5_ANNCSU_EXACT_RESOLVED',
+    'R5_STREET_WITHOUT_CIVIC_PRESERVED',
+    'R5_CIVIC_WITHOUT_CITY_STREET_ONLY_REJECTED',
+    'R5_GEOAPIFY_MISSING_CIVIC_NOT_PROMOTED',
+    'REAL_LOCATION_FIXTURE=False',
+    'CIVIC_STREET_PROMOTION_ALLOWED=False',
+    'FINAL=PASS_PUBLIC_CONFIGURATOR_R5_CIVIC_PRECISION_ACCEPTANCE'
+)) {
+    if (-not $civicPrecisionAcceptance.Contains($token)) {
+        throw "Missing R5 civic precision acceptance token: $token"
     }
 }
 

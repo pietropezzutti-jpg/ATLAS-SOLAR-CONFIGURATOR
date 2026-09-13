@@ -104,7 +104,7 @@ $nominatim_endpoint = (string) $options['geocoder_endpoint'];
 
 $run = static function (string $query) use ($geocoder, $nominatim_endpoint) {
     delete_transient('asc_geocoder_last_upstream_request_at');
-    delete_transient('asc_geo_v5_' . md5(strtolower($nominatim_endpoint . '|' . $query)));
+    delete_transient('asc_geo_v6_' . md5(strtolower($nominatim_endpoint . '|' . $query)));
 
     $request = new WP_REST_Request('GET', '/atlas-solar-configurator/v1/geocode');
     $request->set_param('q', $query);

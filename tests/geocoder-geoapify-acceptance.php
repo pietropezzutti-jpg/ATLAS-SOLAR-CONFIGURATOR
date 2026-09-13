@@ -62,11 +62,18 @@ function asc_building_result(
     float $lat,
     float $lon
 ): array {
+    $house_number = '';
+
+    if (preg_match('/\b(\d{1,4})\b/u', $formatted, $matches)) {
+        $house_number = (string) $matches[1];
+    }
+
     return [
         'place_id' => $place_id,
         'formatted' => $formatted,
         'lat' => $lat,
         'lon' => $lon,
+        'housenumber' => $house_number,
         'result_type' => 'building',
         'rank' => [
             'confidence' => 0.97,
@@ -78,7 +85,7 @@ function asc_building_result(
 
 function asc_geoapify_cache_key(string $query): string
 {
-    return 'asc_geoapify_v6_' . md5(strtolower($query));
+    return 'asc_geoapify_v7_' . md5(strtolower($query));
 }
 
 function asc_delete_geoapify_cache(string $query): void
@@ -99,6 +106,12 @@ function asc_anncsu_exact_record(string $street, string $civic, string $city, fl
 
 function asc_nominatim_result(string $place_id, string $display_name, float $lat, float $lon): array
 {
+    $house_number = '';
+
+    if (preg_match('/\b(\d{1,4})\b/u', $display_name, $matches)) {
+        $house_number = (string) $matches[1];
+    }
+
     return [
         'place_id' => $place_id,
         'display_name' => $display_name,
@@ -106,6 +119,9 @@ function asc_nominatim_result(string $place_id, string $display_name, float $lat
         'lon' => $lon,
         'type' => 'house',
         'category' => 'place',
+        'address' => [
+            'house_number' => $house_number,
+        ],
     ];
 }
 
