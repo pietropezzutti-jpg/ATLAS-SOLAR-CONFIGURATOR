@@ -61,8 +61,11 @@ function asc_r5_nominatim(
     ];
 }
 
-$filter = static function ($preempt, $args, $url) {
+$http_calls = [];
+
+$filter = static function ($preempt, $args, $url) use (&$http_calls) {
     $url = (string) $url;
+    $http_calls[] = $url;
 
     $query_string = (string) (
         wp_parse_url($url, PHP_URL_QUERY) ?? ''
@@ -135,6 +138,11 @@ $filter = static function ($preempt, $args, $url) {
                 trim((string) $params['street'])
             );
 
+            $address_only = isset($params['layer'])
+                && 'address' === strtolower(
+                    trim((string) $params['layer'])
+                );
+
             if (0 === strpos($street, '18 ')) {
                 $results = [
                     asc_r5_nominatim(
@@ -155,15 +163,31 @@ $filter = static function ($preempt, $args, $url) {
                         '20'
                     ),
                 ];
-            } else {
+            } elseif (
+                !$address_only
+                && 'via esempio' === $street
+            ) {
                 $results = [
+                    [
+                        'place_id' => 'street-reference-admin',
+                        'display_name' => 'Comune Test, Italia',
+                        'lat' => 45.500000,
+                        'lon' => 10.500000,
+                        'type' => 'administrative',
+                        'category' => 'boundary',
+                        'address' => [
+                            'city' => 'Comune Test',
+                        ],
+                    ],
                     asc_r5_nominatim(
-                        'structured-street-only',
+                        'street-reference-highway',
                         'Via Esempio, Comune Test, Italia',
                         45.000000,
                         10.000000
                     ),
                 ];
+            } else {
+                $results = [];
             }
         } else {
             $results = [];
@@ -243,7 +267,7 @@ $run_fallback = static function (
     );
 
     delete_transient(
-        'asc_geo_v7_' .
+        'asc_geo_v8_' .
         md5(strtolower($endpoint . '|' . $query))
     );
 
@@ -265,7 +289,7 @@ $run_smart = static function (
     );
 
     delete_transient(
-        'asc_geo_v7_' .
+        'asc_geo_v8_' .
         md5(strtolower($endpoint . '|' . $query))
     );
 
@@ -382,6 +406,43 @@ asc_r5_assert(
     'R6_ANNCSU_ERROR_DEGRADES_TO_MANUAL_MAP'
 );
 
+asc_r5_assert(
+    'street-reference-highway'
+        === ($data23['manualFallback']['id'] ?? null)
+        && 'highway'
+            === ($data23['manualFallback']['category'] ?? null),
+    'R7_MANUAL_REFERENCE_HIGHWAY_ONLY'
+);
+
+$street_reference_calls = array_values(
+    array_filter(
+        $http_calls,
+        static function ($url): bool {
+            $query_string = (string) (
+                wp_parse_url((string) $url, PHP_URL_QUERY) ?? ''
+            );
+
+            $params = [];
+            parse_str($query_string, $params);
+
+            return false !== strpos(
+                (string) $url,
+                'format=jsonv2'
+            )
+                && isset($params['street'])
+                && 'via esempio' === strtolower(
+                    trim((string) $params['street'])
+                )
+                && !isset($params['layer']);
+        }
+    )
+);
+
+asc_r5_assert(
+    count($street_reference_calls) >= 1,
+    'R7_STREET_REFERENCE_QUERY_OMITS_ADDRESS_LAYER'
+);
+
 /*
  * Geoapify building-like candidate without housenumber
  * cannot satisfy civic 20; exact fallback must win.
@@ -443,5 +504,13 @@ fwrite(
 );
 fwrite(
     STDOUT,
-    "FINAL=PASS_PUBLIC_CONFIGURATOR_R6_KEYLESS_MANUAL_MAP_ACCEPTANCE\n"
+    "STREET_REFERENCE_ADDRESS_LAYER=False\n"
+);
+fwrite(
+    STDOUT,
+    "STREET_REFERENCE_HIGHWAY_ONLY=True\n"
+);
+fwrite(
+    STDOUT,
+    "FINAL=PASS_PUBLIC_CONFIGURATOR_R7_KEYLESS_STREET_REFERENCE_ACCEPTANCE\n"
 );

@@ -122,12 +122,15 @@ foreach ($token in @(
     'countrycodes',
     'user-agent',
     'nominatim-compatible',
-    "CACHE_STRATEGY_VERSION = '7'",
+    "CACHE_STRATEGY_VERSION = '8'",
     'build_structured_address',
     'lookup_structured_candidates',
+    'lookup_street_reference_candidates',
+    'filter_street_reference_candidates',
+    'address_only',
     "'street' => `$street",
     "'city' => `$city",
-    "'layer' => 'address'",
+    "`$base_args['layer'] = 'address'",
     'structured_exact',
     'ASC_ANNCSU_ADDRESS_API_URL',
     'developers.coseerobe.it/api/v1/anncsu-indirizzi-slim',
@@ -247,10 +250,14 @@ foreach ($token in @(
     'R5_GEOAPIFY_MISSING_CIVIC_NOT_PROMOTED',
     'R6_MANUAL_MAP_DOES_NOT_PROMOTE_STREET_TO_PROPERTY',
     'R6_ANNCSU_ERROR_DEGRADES_TO_MANUAL_MAP',
+    'R7_MANUAL_REFERENCE_HIGHWAY_ONLY',
+    'R7_STREET_REFERENCE_QUERY_OMITS_ADDRESS_LAYER',
     'REAL_LOCATION_FIXTURE=False',
     'CIVIC_STREET_PROMOTION_ALLOWED=False',
     'KEYLESS_MANUAL_MAP_FALLBACK=True',
-    'FINAL=PASS_PUBLIC_CONFIGURATOR_R6_KEYLESS_MANUAL_MAP_ACCEPTANCE'
+    'STREET_REFERENCE_ADDRESS_LAYER=False',
+    'STREET_REFERENCE_HIGHWAY_ONLY=True',
+    'FINAL=PASS_PUBLIC_CONFIGURATOR_R7_KEYLESS_STREET_REFERENCE_ACCEPTANCE'
 )) {
     if (-not $civicPrecisionAcceptance.Contains($token)) {
         throw "Missing R5 civic precision acceptance token: $token"

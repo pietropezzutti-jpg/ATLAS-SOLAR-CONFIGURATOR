@@ -27,7 +27,7 @@ final class Atlas_Solar_Configurator_Geocoder
     private const ROUTE = '/geocode';
     private const CACHE_TTL = DAY_IN_SECONDS;
     private const NEGATIVE_CACHE_TTL = 5 * MINUTE_IN_SECONDS;
-    private const CACHE_STRATEGY_VERSION = '7';
+    private const CACHE_STRATEGY_VERSION = '8';
     private const RATE_LIMIT_KEY = 'asc_geocoder_last_upstream_request_at';
     private const FALLBACK_DELAY_MICROSECONDS = 1100000;
 
@@ -233,7 +233,7 @@ final class Atlas_Solar_Configurator_Geocoder
             $fallback_attempted = true;
             $this->wait_before_fallback();
 
-            $street_reference_candidates = $this->lookup_structured_candidates(
+            $street_reference_candidates = $this->lookup_street_reference_candidates(
                 $endpoint,
                 $structured['street_name'],
                 $structured['city']
@@ -402,18 +402,47 @@ final class Atlas_Solar_Configurator_Geocoder
         );
     }
 
-    private function lookup_nominatim_candidates(string $endpoint, array $query_args)
-    {
+    private function lookup_street_reference_candidates(
+        string $endpoint,
+        string $street,
+        string $city
+    ) {
+        $candidates = $this->lookup_nominatim_candidates(
+            $endpoint,
+            [
+                'street' => $street,
+                'city' => $city,
+            ],
+            false
+        );
+
+        if (!is_array($candidates)) {
+            return $candidates;
+        }
+
+        return $this->filter_street_reference_candidates($candidates);
+    }
+
+    private function lookup_nominatim_candidates(
+        string $endpoint,
+        array $query_args,
+        bool $address_only = true
+    ) {
+        $base_args = [
+            'format' => 'jsonv2',
+            'addressdetails' => 1,
+            'limit' => 5,
+            'countrycodes' => 'it',
+            'accept-language' => 'it',
+        ];
+
+        if ($address_only) {
+            $base_args['layer'] = 'address';
+        }
+
         $url = add_query_arg(
             array_merge(
-                [
-                    'format' => 'jsonv2',
-                    'addressdetails' => 1,
-                    'limit' => 5,
-                    'countrycodes' => 'it',
-                    'accept-language' => 'it',
-                    'layer' => 'address',
-                ],
+                $base_args,
                 $query_args
             ),
             $endpoint
@@ -505,6 +534,22 @@ final class Atlas_Solar_Configurator_Geocoder
         }
 
         return $candidates;
+    }
+
+    private function filter_street_reference_candidates(array $candidates): array
+    {
+        return array_values(
+            array_filter(
+                $candidates,
+                static function (array $candidate): bool {
+                    $category = isset($candidate['category'])
+                        ? sanitize_key((string) $candidate['category'])
+                        : '';
+
+                    return 'highway' === $category;
+                }
+            )
+        );
     }
 
     private function filter_exact_civic_candidates(array $candidates, string $civic): array
