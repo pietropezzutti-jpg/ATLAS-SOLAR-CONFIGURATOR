@@ -12,6 +12,7 @@ if (!defined('ABSPATH')) {
 final class Atlas_Solar_Configurator_Settings
 {
     public const OPTION_KEY = 'atlas_solar_configurator_map';
+    public const SECRETS_OPTION_KEY = 'atlas_solar_configurator_secrets';
     public const SETTINGS_GROUP = 'atlas_solar_configurator_map_group';
 
     public function register(): void
@@ -23,6 +24,19 @@ final class Atlas_Solar_Configurator_Settings
                 'type' => 'array',
                 'sanitize_callback' => [$this, 'sanitize_map_options'],
                 'default' => $this->get_defaults(),
+            ]
+        );
+
+        register_setting(
+            self::SETTINGS_GROUP,
+            self::SECRETS_OPTION_KEY,
+            [
+                'type' => 'array',
+                'sanitize_callback' => [$this, 'sanitize_secret_options'],
+                'show_in_rest' => false,
+                'default' => [
+                    'geoapify_api_key' => '',
+                ],
             ]
         );
     }
@@ -50,6 +64,20 @@ final class Atlas_Solar_Configurator_Settings
         }
 
         return array_merge($this->get_defaults(), $saved);
+    }
+
+    public static function get_geoapify_api_key(): string
+    {
+        $resolved = self::resolve_geoapify_api_key();
+
+        return $resolved['value'];
+    }
+
+    public static function get_geoapify_api_key_source(): string
+    {
+        $resolved = self::resolve_geoapify_api_key();
+
+        return $resolved['source'];
     }
 
     public function get_frontend_map_config(): array
@@ -165,12 +193,85 @@ final class Atlas_Solar_Configurator_Settings
         ];
     }
 
+    public function sanitize_secret_options($value): array
+    {
+        $value = is_array($value)
+            ? $value
+            : [];
+
+        $current = get_option(
+            self::SECRETS_OPTION_KEY,
+            []
+        );
+
+        $current = is_array($current)
+            ? $current
+            : [];
+
+        $current_key =
+            self::normalize_geoapify_api_key(
+                $current['geoapify_api_key']
+                    ?? ''
+            );
+
+        if (
+            !empty(
+                $value[
+                    'geoapify_api_key_clear'
+                ]
+            )
+        ) {
+            $api_key = '';
+        } else {
+            $submitted = isset(
+                $value['geoapify_api_key']
+            )
+                ? trim(
+                    (string) $value[
+                        'geoapify_api_key'
+                    ]
+                )
+                : '';
+
+            if ('' === $submitted) {
+                $api_key = $current_key;
+            } else {
+                $candidate =
+                    self::normalize_geoapify_api_key(
+                        $submitted
+                    );
+
+                $api_key = '' !== $candidate
+                    ? $candidate
+                    : $current_key;
+            }
+        }
+
+        return [
+            'geoapify_api_key' => $api_key,
+        ];
+    }
+
     public function get_summary(): array
     {
         $options = $this->get_map_options();
-        $geoapify_configured = defined('ASC_GEOAPIFY_API_KEY')
-            ? '' !== trim((string) constant('ASC_GEOAPIFY_API_KEY'))
-            : '' !== trim((string) getenv('ASC_GEOAPIFY_API_KEY'));
+
+        $geoapify_key =
+            self::get_geoapify_api_key();
+
+        $geoapify_source =
+            self::get_geoapify_api_key_source();
+
+        $source_labels = [
+            'constant' => 'Server constant',
+            'environment' => 'Server environment',
+            'wordpress_admin' => 'WordPress admin (server-side)',
+            'none' => 'Not configured',
+        ];
+
+        $geoapify_source_label =
+            $source_labels[$geoapify_source]
+            ?? 'Not configured';
 
         return [
             'Plugin version' => ASC_VERSION,
@@ -179,9 +280,10 @@ final class Atlas_Solar_Configurator_Settings
             'ATLAS transport' => 'Server-side adapter present; public boundary disconnected',
             'ATLAS credentials' => 'Server-side only; never exposed to frontend',
             'ONE CLICK' => 'ATLAS-owned; not called by WordPress public flow',
-            'Geocoder' => $geoapify_configured
+            'Geocoder' => '' !== $geoapify_key
                 ? 'Geoapify primary; Nominatim + ANNCSU fallback'
                 : 'Nominatim + ANNCSU fallback; Geoapify key not configured',
+            'Geoapify key source' => $geoapify_source_label,
             'Map tiles' => 'Enabled client-side',
             'Public aerial imagery' => !empty($options['aerial_enabled'])
                 ? 'Automatic provider registry: Lombardia 2024 + Emilia-Romagna 2023-24 when in coverage; national MASE fallback otherwise'
@@ -189,6 +291,91 @@ final class Atlas_Solar_Configurator_Settings
             'Mock solar result' => ASC_MOCK_MODE ? 'Enabled' : 'Disabled',
             'Lead transmission' => 'Disabled',
         ];
+    }
+
+    private static function resolve_geoapify_api_key(): array
+    {
+        if (
+            defined(
+                'ASC_GEOAPIFY_API_KEY'
+            )
+        ) {
+            $constant =
+                self::normalize_geoapify_api_key(
+                    constant(
+                        'ASC_GEOAPIFY_API_KEY'
+                    )
+                );
+
+            if ('' !== $constant) {
+                return [
+                    'value' => $constant,
+                    'source' => 'constant',
+                ];
+            }
+        }
+
+        $environment =
+            self::normalize_geoapify_api_key(
+                getenv(
+                    'ASC_GEOAPIFY_API_KEY'
+                )
+            );
+
+        if ('' !== $environment) {
+            return [
+                'value' => $environment,
+                'source' => 'environment',
+            ];
+        }
+
+        $saved = get_option(
+            self::SECRETS_OPTION_KEY,
+            []
+        );
+
+        $saved = is_array($saved)
+            ? $saved
+            : [];
+
+        $wordpress_key =
+            self::normalize_geoapify_api_key(
+                $saved['geoapify_api_key']
+                    ?? ''
+            );
+
+        if ('' !== $wordpress_key) {
+            return [
+                'value' => $wordpress_key,
+                'source' => 'wordpress_admin',
+            ];
+        }
+
+        return [
+            'value' => '',
+            'source' => 'none',
+        ];
+    }
+
+    private static function normalize_geoapify_api_key(
+        $value
+    ): string {
+        $candidate = trim(
+            (string) $value
+        );
+
+        if (
+            '' === $candidate
+            || strlen($candidate) > 512
+            || preg_match(
+                '/[\x00-\x20\x7F]/',
+                $candidate
+            )
+        ) {
+            return '';
+        }
+
+        return $candidate;
     }
 
     private function sanitize_endpoint($value, string $default): string

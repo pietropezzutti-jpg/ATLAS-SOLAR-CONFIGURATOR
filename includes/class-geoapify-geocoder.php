@@ -748,15 +748,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
 
     private function api_key(): string
     {
-        $value = defined('ASC_GEOAPIFY_API_KEY')
-            ? (string) constant('ASC_GEOAPIFY_API_KEY')
-            : (string) getenv('ASC_GEOAPIFY_API_KEY');
-
-        $value = trim($value);
-        if ('' === $value || strlen($value) > 512 || preg_match('/[\r\n]/', $value)) {
-            return '';
-        }
-        return $value;
+        return Atlas_Solar_Configurator_Settings::get_geoapify_api_key();
     }
 
     private function valid_coordinates($latitude, $longitude): bool

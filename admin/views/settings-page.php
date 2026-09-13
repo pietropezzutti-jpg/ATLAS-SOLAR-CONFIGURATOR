@@ -9,7 +9,26 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-$option_name = Atlas_Solar_Configurator_Settings::OPTION_KEY;
+$option_name =
+    Atlas_Solar_Configurator_Settings::OPTION_KEY;
+
+$secret_option_name =
+    Atlas_Solar_Configurator_Settings::SECRETS_OPTION_KEY;
+
+$geoapify_source =
+    Atlas_Solar_Configurator_Settings::get_geoapify_api_key_source();
+
+$geoapify_source_labels = [
+    'constant' => __('Server constant', 'atlas-solar-configurator'),
+    'environment' => __('Server environment', 'atlas-solar-configurator'),
+    'wordpress_admin' => __('WordPress admin (server-side)', 'atlas-solar-configurator'),
+    'none' => __('Not configured', 'atlas-solar-configurator'),
+];
+
+$geoapify_source_label =
+    $geoapify_source_labels[
+        $geoapify_source
+    ] ?? $geoapify_source_labels['none'];
 ?>
 <div class="wrap">
     <h1><?php echo esc_html__('ATLAS Configurator', 'atlas-solar-configurator'); ?></h1>
@@ -66,6 +85,54 @@ $option_name = Atlas_Solar_Configurator_Settings::OPTION_KEY;
 
         <table class="form-table" role="presentation">
             <tbody>
+            <tr>
+                <th scope="row">
+                    <label for="asc-geoapify-api-key">
+                        <?php echo esc_html__('Geoapify API key', 'atlas-solar-configurator'); ?>
+                    </label>
+                </th>
+                <td>
+                    <input
+                        id="asc-geoapify-api-key"
+                        class="regular-text code"
+                        type="password"
+                        autocomplete="new-password"
+                        name="<?php echo esc_attr($secret_option_name); ?>[geoapify_api_key]"
+                        value=""
+                        placeholder="<?php echo esc_attr__('Incolla una nuova chiave per impostarla o sostituirla', 'atlas-solar-configurator'); ?>"
+                    />
+
+                    <p class="description">
+                        <?php
+                        echo esc_html(
+                            sprintf(
+                                __('Sorgente attuale: %s. La chiave resta esclusivamente server-side.', 'atlas-solar-configurator'),
+                                $geoapify_source_label
+                            )
+                        );
+                        ?>
+                    </p>
+
+                    <label>
+                        <input
+                            type="checkbox"
+                            name="<?php echo esc_attr($secret_option_name); ?>[geoapify_api_key_clear]"
+                            value="1"
+                        />
+                        <?php echo esc_html__('Rimuovi la chiave Geoapify salvata in WordPress', 'atlas-solar-configurator'); ?>
+                    </label>
+
+                    <p class="description">
+                        <?php
+                        echo esc_html__(
+                            'Lascia vuoto il campo per mantenere la chiave esistente. ASC_GEOAPIFY_API_KEY o la variabile ambiente, se presenti, hanno precedenza.',
+                            'atlas-solar-configurator'
+                        );
+                        ?>
+                    </p>
+                </td>
+            </tr>
+
             <tr>
                 <th scope="row">
                     <label for="asc-geocoder-endpoint">
