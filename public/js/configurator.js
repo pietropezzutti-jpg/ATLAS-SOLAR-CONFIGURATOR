@@ -329,6 +329,13 @@
         map = window.L.map(element, { zoomControl: true, scrollWheelZoom: true })
             .setView([Number(center[0]), Number(center[1])], Number(mapConfig.defaultZoom) || 5);
 
+        if (
+            window.AtlasSolarConfiguratorImagery &&
+            typeof window.AtlasSolarConfiguratorImagery.install === 'function'
+        ) {
+            window.AtlasSolarConfiguratorImagery.install(map);
+        }
+
         window.L.tileLayer(
             mapConfig.tileUrl || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             { maxZoom: Number(mapConfig.maxZoom) || 19, attribution: mapAttribution() }

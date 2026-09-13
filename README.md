@@ -1,12 +1,12 @@
 # ATLAS Solar Lead Configurator
 
-Version: 0.5.0
+Version: 0.5.1
 
 ATLAS Solar Lead Configurator is the public WordPress client for the ATLAS solar lead qualification funnel. WordPress owns the public experience; ATLAS remains the system of record for Property Intelligence, CRM/Sales, Proposal, Contract, Signature, Customer File and Delivery.
 
 ## PLUGIN-005 — server-side ATLAS transport adapter foundation
 
-Version 0.5.0 preserves the certified PLUGIN-003 address/map flow and the PLUGIN-004 public assessment contract. It adds a server-side transport adapter that knows the exact ATLAS Property Intelligence request/response contract, but the public WordPress REST boundary is intentionally **not connected** to that transport yet.
+Version 0.5.1 preserves the certified PLUGIN-003 address/map flow and the PLUGIN-004 public assessment contract. It adds a server-side transport adapter that knows the exact ATLAS Property Intelligence request/response contract, but the public WordPress REST boundary is intentionally **not connected** to that transport yet.
 
 The ATLAS endpoint discovered from the running FastAPI OpenAPI document is:
 

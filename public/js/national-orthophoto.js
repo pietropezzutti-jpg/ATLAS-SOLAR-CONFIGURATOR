@@ -15,8 +15,6 @@
         return;
     }
 
-    const originalMapFactory = window.L.map;
-
     function escapeHtml(value) {
         return String(value || '')
             .replace(/&/g, '&amp;')
@@ -188,15 +186,7 @@
         }, 0);
     }
 
-    window.L.map = function () {
-        const map = originalMapFactory.apply(window.L, arguments);
-        installAerialRegistry(map);
-        return map;
+    window.AtlasSolarConfiguratorImagery = {
+        install: installAerialRegistry
     };
-
-    Object.keys(originalMapFactory).forEach(function (key) {
-        try {
-            window.L.map[key] = originalMapFactory[key];
-        } catch (_) {}
-    });
 }());

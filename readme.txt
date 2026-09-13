@@ -4,7 +4,7 @@ Tags: solar, configurator, lead, photovoltaic, map, geocoding
 Requires at least: 6.0
 Tested up to: 6.6
 Requires PHP: 7.4
-Stable tag: 0.5.0
+Stable tag: 0.5.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -14,7 +14,7 @@ Public WordPress solar lead configurator with explicit property-position confirm
 
 ATLAS Solar Lead Configurator provides a public WordPress funnel for address resolution, property-position confirmation, property qualification, consumption profiling, a clearly labelled mock solar result and demo contact capture.
 
-Version 0.5.0 includes the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R1 acceptance phase, so normal browser use still does not call ATLAS.
+Version 0.5.1 includes the PLUGIN-005 server-side ATLAS transport adapter foundation. The exact ATLAS request is limited to confirmed latitude/longitude and uses server-side HTTP Bearer authentication. The public WordPress assessment boundary remains deliberately disconnected in this R1 acceptance phase, so normal browser use still does not call ATLAS.
 
 Shortcode:
 

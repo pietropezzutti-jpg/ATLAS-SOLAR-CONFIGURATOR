@@ -50,11 +50,11 @@ $main = Get-Content -LiteralPath (Join-Path $PluginRoot 'atlas-solar-configurato
 if ($main -notmatch 'Plugin Name:\s*ATLAS Solar Lead Configurator') {
     throw 'Main plugin header is missing.'
 }
-if ($main -notmatch 'Version:\s*0\.5\.0') {
-    throw 'Plugin version header is not 0.5.0.'
+if ($main -notmatch 'Version:\s*0\.5\.1') {
+    throw 'Plugin version header is not 0.5.1.'
 }
-if ($main -notmatch "define\('ASC_VERSION', '0\.5\.0'\)") {
-    throw 'ASC_VERSION is not 0.5.0.'
+if ($main -notmatch "define\('ASC_VERSION', '0\.5\.1'\)") {
+    throw 'ASC_VERSION is not 0.5.1.'
 }
 
 foreach ($bootstrapToken in @(
@@ -356,8 +356,8 @@ if ($orthophoto.Contains('OI.ORTOIMMAGINI.2012')) {
 }
 
 $readme = Get-Content -LiteralPath (Join-Path $PluginRoot 'readme.txt') -Raw
-if ($readme -notmatch 'Stable tag:\s*0\.5\.0') {
-    throw 'readme.txt stable tag is not 0.5.0.'
+if ($readme -notmatch 'Stable tag:\s*0\.5\.1') {
+    throw 'readme.txt stable tag is not 0.5.1.'
 }
 foreach ($token in @(
     'assessment-contract',
