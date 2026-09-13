@@ -1,6 +1,6 @@
 <?php
 /**
- * Geoapify candidate-quality R3 + building-snap R1 acceptance.
+ * Geoapify candidate-quality R4 + building-snap R1 acceptance.
  *
  * All HTTP is intercepted. No external request is executed.
  *
@@ -78,7 +78,7 @@ function asc_building_result(
 
 function asc_geoapify_cache_key(string $query): string
 {
-    return 'asc_geoapify_v5_' . md5(strtolower($query));
+    return 'asc_geoapify_v6_' . md5(strtolower($query));
 }
 
 function asc_delete_geoapify_cache(string $query): void
@@ -94,6 +94,18 @@ function asc_anncsu_exact_record(string $street, string $civic, string $city, fl
         'CIVICO' => $civic,
         'latitude' => $lat,
         'longitude' => $lon,
+    ];
+}
+
+function asc_nominatim_result(string $place_id, string $display_name, float $lat, float $lon): array
+{
+    return [
+        'place_id' => $place_id,
+        'display_name' => $display_name,
+        'lat' => $lat,
+        'lon' => $lon,
+        'type' => 'house',
+        'category' => 'place',
     ];
 }
 
@@ -128,7 +140,7 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
                     ],
                 ],
             ];
-        } elseif ('tiebreaker_clear_winner' === $mode) {
+        } elseif ('tiebreaker_clear_winner' === $mode || 'tiebreaker_nominatim_clear_winner' === $mode) {
             $results = [
                 asc_building_result(
                     'synthetic-building-farther',
@@ -143,7 +155,14 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
                     10.201000
                 ),
             ];
-        } elseif ('tiebreaker_ambiguous' === $mode || 'tiebreaker_anncsu_unavailable' === $mode) {
+        } elseif (
+            'tiebreaker_ambiguous' === $mode
+            || 'tiebreaker_anncsu_unavailable' === $mode
+            || 'tiebreaker_nominatim_not_discriminating' === $mode
+            || 'tiebreaker_nominatim_ambiguous' === $mode
+            || 'tiebreaker_nominatim_unavailable' === $mode
+            || 'tiebreaker_anncsu_ambiguous' === $mode
+        ) {
             $results = [
                 asc_building_result(
                     'synthetic-building-option-a',
@@ -211,9 +230,48 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
     }
 
     if (false !== strpos((string) $url, 'format=jsonv2')) {
+        if ('tiebreaker_nominatim_clear_winner' === $mode) {
+            $results = [
+                asc_nominatim_result(
+                    'nominatim-structured-clear',
+                    'Via Esempio 41, Comune Test, Italia',
+                    45.901010,
+                    10.201010
+                ),
+            ];
+        } elseif ('tiebreaker_nominatim_not_discriminating' === $mode) {
+            $results = [
+                asc_nominatim_result(
+                    'nominatim-structured-middle',
+                    'Via Esempio 43, Comune Test, Italia',
+                    45.902025,
+                    10.202025
+                ),
+            ];
+        } elseif ('tiebreaker_nominatim_ambiguous' === $mode) {
+            $results = [
+                asc_nominatim_result(
+                    'nominatim-structured-a',
+                    'Via Esempio 43, Comune Test, Italia',
+                    45.902010,
+                    10.202010
+                ),
+                asc_nominatim_result(
+                    'nominatim-structured-b',
+                    'Via Esempio 43, Comune Test, Italia',
+                    45.902040,
+                    10.202040
+                ),
+            ];
+        } elseif ('tiebreaker_nominatim_unavailable' === $mode) {
+            return new WP_Error('nominatim_unavailable', 'Synthetic Nominatim unavailable.');
+        } else {
+            $results = [];
+        }
+
         return [
             'headers' => [],
-            'body' => wp_json_encode([]),
+            'body' => wp_json_encode($results),
             'response' => ['code' => 200, 'message' => 'OK'],
             'cookies' => [],
             'filename' => null,
@@ -221,10 +279,6 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
     }
 
     if (false !== strpos((string) $url, 'anncsu-indirizzi-slim')) {
-        if ('tiebreaker_anncsu_unavailable' === $mode) {
-            return new WP_Error('anncsu_unavailable', 'Synthetic ANNCSU unavailable.');
-        }
-
         if ('admin_only_address_like' === $mode) {
             $records = [
                 asc_anncsu_exact_record('Via Esempio', '39', 'Comune Test', 45.900321, 10.200654),
@@ -236,6 +290,11 @@ $filter = static function ($preempt, $args, $url) use (&$http_calls, &$mode) {
         } elseif ('tiebreaker_ambiguous' === $mode) {
             $records = [
                 asc_anncsu_exact_record('Via Esempio', '43', 'Comune Test', 45.902025, 10.202025),
+            ];
+        } elseif ('tiebreaker_anncsu_ambiguous' === $mode) {
+            $records = [
+                asc_anncsu_exact_record('Via Esempio', '43', 'Comune Test', 45.902010, 10.202010),
+                asc_anncsu_exact_record('Via Esempio', '43', 'Comune Test', 45.902040, 10.202040),
             ];
         } else {
             $records = [];
@@ -555,6 +614,22 @@ asc_geoapify_assert(
     'ANNCSU_UNAVAILABLE_DOCUMENTED'
 );
 
+/* R4: street-type token boundary must work without a civic number. */
+$r4_street_like_probe = \Closure::bind(
+    function (string $query): bool {
+        return $this->query_looks_like_address($query);
+    },
+    $geocoder,
+    Atlas_Solar_Configurator_Geoapify_Geocoder::class
+);
+
+asc_geoapify_assert(
+    is_callable($r4_street_like_probe)
+        && true === $r4_street_like_probe('Via Esempio, Comune Test')
+        && false === $r4_street_like_probe('Viareggio'),
+    'R4_STREET_TOKEN_BOUNDARY_SAFETY'
+);
+
 asc_geoapify_assert(
     defined('ASC_VERSION') && '0.5.0' === (string) constant('ASC_VERSION'),
     'PLUGIN_VERSION_PRESERVED'
@@ -573,4 +648,7 @@ fwrite(STDOUT, "BUILDING_SNAP_POLICY=UNIQUE_HIGH_CONFIDENCE_SINGLE_BUILDING_ONLY
 fwrite(STDOUT, "BUILDING_SNAP_MAX_DISTANCE_METERS=200\n");
 fwrite(STDOUT, "AMBIGUOUS_EVIDENCE_PRESERVES_ORIGINAL=True\n");
 fwrite(STDOUT, "EXTERNAL_HTTP_EXECUTED=False\n");
-fwrite(STDOUT, "FINAL=PASS_PUBLIC_CONFIGURATOR_GEOAPIFY_QUALITY_R3\n");
+fwrite(STDOUT, "R4_STREET_WITHOUT_CIVIC=True\n");
+fwrite(STDOUT, "R4_VIAREGGIO_TOKEN_SAFETY=True\n");
+fwrite(STDOUT, "R4_NOMINATIM_SECONDARY_TIEBREAKER=True\n");
+fwrite(STDOUT, "FINAL=PASS_PUBLIC_CONFIGURATOR_GEOAPIFY_QUALITY_R4\n");

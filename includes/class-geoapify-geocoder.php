@@ -12,11 +12,14 @@
  * results when Geoapify also returned a reliable address/building candidate,
  * then deduplicates equivalent candidates without collapsing genuine address
  * ambiguity. For address-like queries, administrative-only Geoapify results are
- * rejected and the existing fallback geocoder is used. When multiple strong
- * building candidates remain, ANNCSU exact-civic evidence may select one only
- * if the distance comparison has a clear winner. Building snap R1 remains
- * conservative: only one high-confidence candidate can be enriched, and only
- * one building Polygon/MultiPolygon within 200 metres may move the marker.
+ * rejected and the existing fallback geocoder is used. Street-like queries are
+ * recognized even without a civic number when they include an independent
+ * street-type token. When multiple strong building candidates remain, ANNCSU
+ * exact-civic evidence is tried first; if unavailable, Nominatim structured
+ * exact evidence may select one only if the distance comparison has a clear
+ * winner. Building snap R1 remains conservative: only one high-confidence
+ * candidate can be enriched, and only one building Polygon/MultiPolygon within
+ * 200 metres may move the marker.
  *
  * @package AtlasSolarConfigurator
  */
@@ -93,7 +96,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             return $this->fallback->geocode($request);
         }
 
-        $cache_key = 'asc_geoapify_v5_' . md5(strtolower($query));
+        $cache_key = 'asc_geoapify_v6_' . md5(strtolower($query));
         $cached = get_transient($cache_key);
         if (false !== $cached && is_array($cached) && isset($cached['candidates'])) {
             $cached_candidates = is_array($cached['candidates']) ? $cached['candidates'] : [];
@@ -244,7 +247,7 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
     private function query_looks_like_address(string $query): bool
     {
         $normalized = strtolower((string) preg_replace('/\s+/u', ' ', trim($query)));
-        if ('' === $normalized || !preg_match('/\d+[a-z]?/u', $normalized)) {
+        if ('' === $normalized) {
             return false;
         }
 
@@ -364,36 +367,84 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
         }
 
         if (!method_exists($this->fallback, 'anncsu_exact_candidates_for_query')) {
-            return $this->annotate_tiebreaker($candidates, false, 'anncsu_resolver_unavailable');
+            $candidates = $this->annotate_anncsu_tiebreaker($candidates, false, 'anncsu_resolver_unavailable');
+            return $this->maybe_resolve_nominatim_structured_tiebreaker($candidates, $query);
         }
 
         $anncsu_candidates = $this->fallback->anncsu_exact_candidates_for_query($query);
-        if (1 !== count($anncsu_candidates)) {
-            return $this->annotate_tiebreaker(
+        if (count($anncsu_candidates) > 1) {
+            return $this->annotate_anncsu_tiebreaker($candidates, false, 'anncsu_exact_civic_ambiguous');
+        }
+
+        if (1 === count($anncsu_candidates)) {
+            $anncsu = $anncsu_candidates[0];
+            if (!$this->valid_coordinates($anncsu['latitude'] ?? null, $anncsu['longitude'] ?? null)) {
+                return $this->annotate_anncsu_tiebreaker($candidates, false, 'anncsu_exact_civic_invalid_coordinates');
+            }
+
+            return $this->resolve_reference_tiebreaker(
                 $candidates,
-                false,
-                0 === count($anncsu_candidates) ? 'anncsu_exact_civic_unavailable' : 'anncsu_exact_civic_ambiguous'
+                $anncsu,
+                'anncsuTiebreaker',
+                'anncsu_exact_civic',
+                'clear_anncsu_exact_civic_winner',
+                'anncsu_distance_not_discriminating'
             );
         }
 
-        $anncsu = $anncsu_candidates[0];
-        if (
-            !$this->valid_coordinates($anncsu['latitude'] ?? null, $anncsu['longitude'] ?? null)
-        ) {
-            return $this->annotate_tiebreaker($candidates, false, 'anncsu_exact_civic_invalid_coordinates');
+        $candidates = $this->annotate_anncsu_tiebreaker($candidates, false, 'anncsu_exact_civic_unavailable');
+        return $this->maybe_resolve_nominatim_structured_tiebreaker($candidates, $query);
+    }
+
+    private function maybe_resolve_nominatim_structured_tiebreaker(array $candidates, string $query): array
+    {
+        if (!method_exists($this->fallback, 'nominatim_structured_exact_candidates_for_query')) {
+            return $this->annotate_nominatim_tiebreaker($candidates, false, 'nominatim_structured_exact_resolver_unavailable');
         }
 
+        $nominatim_candidates = $this->fallback->nominatim_structured_exact_candidates_for_query($query);
+        if (1 !== count($nominatim_candidates)) {
+            return $this->annotate_nominatim_tiebreaker(
+                $candidates,
+                false,
+                0 === count($nominatim_candidates) ? 'nominatim_structured_exact_unavailable' : 'nominatim_structured_exact_ambiguous'
+            );
+        }
+
+        $nominatim = $nominatim_candidates[0];
+        if (!$this->valid_coordinates($nominatim['latitude'] ?? null, $nominatim['longitude'] ?? null)) {
+            return $this->annotate_nominatim_tiebreaker($candidates, false, 'nominatim_structured_exact_invalid_coordinates');
+        }
+
+        return $this->resolve_reference_tiebreaker(
+            $candidates,
+            $nominatim,
+            'nominatimTiebreaker',
+            'nominatim_structured_exact',
+            'clear_nominatim_structured_exact_winner',
+            'nominatim_distance_not_discriminating'
+        );
+    }
+
+    private function resolve_reference_tiebreaker(
+        array $candidates,
+        array $reference,
+        string $metadata_key,
+        string $source,
+        string $applied_reason,
+        string $not_discriminating_reason
+    ): array {
         $distances = [];
         foreach ($candidates as $index => $candidate) {
             if (!$this->valid_coordinates($candidate['latitude'] ?? null, $candidate['longitude'] ?? null)) {
-                return $this->annotate_tiebreaker($candidates, false, 'geoapify_candidate_invalid_coordinates');
+                return $this->annotate_tiebreaker($candidates, $metadata_key, false, 'geoapify_candidate_invalid_coordinates', $source);
             }
 
             $distances[] = [
                 'index' => $index,
                 'distance' => $this->distance_meters(
-                    (float) $anncsu['latitude'],
-                    (float) $anncsu['longitude'],
+                    (float) $reference['latitude'],
+                    (float) $reference['longitude'],
                     (float) $candidate['latitude'],
                     (float) $candidate['longitude']
                 ),
@@ -417,18 +468,18 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             || $delta < self::ANNCSU_TIEBREAKER_MIN_DISTANCE_DELTA_METERS
             || $ratio > self::ANNCSU_TIEBREAKER_MAX_WINNER_RATIO
         ) {
-            return $this->annotate_tiebreaker($candidates, false, 'anncsu_distance_not_discriminating');
+            return $this->annotate_tiebreaker($candidates, $metadata_key, false, $not_discriminating_reason, $source);
         }
 
         $selected = $candidates[$winner['index']];
-        $selected['anncsuTiebreaker'] = [
+        $selected[$metadata_key] = [
             'attempted' => true,
             'applied' => true,
-            'reason' => 'clear_anncsu_exact_civic_winner',
+            'reason' => $applied_reason,
             'winnerDistanceMeters' => round($winner['distance'], 1),
             'runnerUpDistanceMeters' => round($runner_up['distance'], 1),
             'distanceDeltaMeters' => round($delta, 1),
-            'source' => 'anncsu_exact_civic',
+            'source' => $source,
         ];
 
         return [$selected];
@@ -449,14 +500,24 @@ final class Atlas_Solar_Configurator_Geoapify_Geocoder
             && in_array($result_type, ['building', 'amenity', 'address'], true);
     }
 
-    private function annotate_tiebreaker(array $candidates, bool $applied, string $reason): array
+    private function annotate_anncsu_tiebreaker(array $candidates, bool $applied, string $reason): array
+    {
+        return $this->annotate_tiebreaker($candidates, 'anncsuTiebreaker', $applied, $reason, 'anncsu_exact_civic');
+    }
+
+    private function annotate_nominatim_tiebreaker(array $candidates, bool $applied, string $reason): array
+    {
+        return $this->annotate_tiebreaker($candidates, 'nominatimTiebreaker', $applied, $reason, 'nominatim_structured_exact');
+    }
+
+    private function annotate_tiebreaker(array $candidates, string $metadata_key, bool $applied, string $reason, string $source): array
     {
         foreach ($candidates as $index => $candidate) {
-            $candidate['anncsuTiebreaker'] = [
+            $candidate[$metadata_key] = [
                 'attempted' => true,
                 'applied' => $applied,
                 'reason' => $reason,
-                'source' => 'anncsu_exact_civic',
+                'source' => $source,
             ];
             $candidates[$index] = $candidate;
         }

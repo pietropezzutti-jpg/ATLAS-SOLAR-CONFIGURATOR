@@ -267,6 +267,37 @@ final class Atlas_Solar_Configurator_Geocoder
         return is_array($candidates) ? $candidates : [];
     }
 
+    /**
+     * Return Nominatim structured exact candidates for an address-like query.
+     *
+     * This exposes the existing structured lookup as an internal boundary for
+     * Geoapify candidate tie-breaking. It does not introduce a new Nominatim
+     * client, endpoint, public REST API or configuration surface.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function nominatim_structured_exact_candidates_for_query(string $query): array
+    {
+        $structured = $this->build_structured_address($query);
+        if (null === $structured) {
+            return [];
+        }
+
+        $options = $this->settings->get_map_options();
+        $endpoint = isset($options['geocoder_endpoint']) ? trim((string) $options['geocoder_endpoint']) : '';
+        if ('' === $endpoint) {
+            return [];
+        }
+
+        $candidates = $this->lookup_structured_candidates(
+            $endpoint,
+            $structured['street'],
+            $structured['city']
+        );
+
+        return is_array($candidates) ? $candidates : [];
+    }
+
     private function lookup_free_form_candidates(string $endpoint, string $query)
     {
         return $this->lookup_nominatim_candidates(
